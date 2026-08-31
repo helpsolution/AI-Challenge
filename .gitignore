@@ -1,0 +1,31 @@
+# --- Приватные материалы челленджа (не для публикации) ---
+Ссылки.md
+Базовая информация.md
+CLAUDE.md
+материалы/
+swarm-report/
+README.md
+
+# --- Секреты ---
+.env
+.env.local
+*.pem
+*.key
+!.env.example
+
+# --- Дизайн-система Halo ---
+# system.css остаётся: он часть приложения, лицензия это разрешает.
+# DESIGN.md — документация коммерческого пакета, републикация запрещена лицензией.
+day1/DESIGN.md
+
+# --- Сборка ---
+build/
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+
+# --- IDE и ОС ---
+.idea/
+*.iml
+*.iws
+.DS_Store
+*.log

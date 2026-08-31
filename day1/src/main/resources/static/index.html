@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Advent — запрос к LLM</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+
+<style>
+  /* Локальный CSS — только то, чего нет в дизайн-системе:
+     раскладка страницы, сетка параметров, слайдер и блок ответа. */
+  [v-cloak] { display: none; }
+
+  .page {
+    width: 100%;
+    max-width: 880px;
+    margin-inline: auto;
+    padding-inline: var(--space-6);
+    transition: max-width var(--motion-base) var(--easing-standard);
+  }
+  .page.is-wide { max-width: 1280px; }
+  .page-body { padding-block: var(--space-8) var(--space-12); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+    align-items: start;
+  }
+  .layout.has-side { grid-template-columns: minmax(0, 1fr) 340px; }
+
+  /* Панель параметров едет вместе со страницей, но ответ остаётся на месте. */
+  .col-side {
+    position: sticky;
+    top: var(--space-6);
+    max-height: calc(100vh - var(--space-8));
+    overflow-y: auto;
+  }
+  @media (max-width: 1100px) {
+    .layout.has-side { grid-template-columns: minmax(0, 1fr); }
+    .col-side { position: static; max-height: none; }
+  }
+
+  .param {
+    display: grid;
+    grid-template-columns: 1fr 84px;
+    grid-template-areas: "toggle number" "slider slider" "hint hint";
+    gap: var(--space-2) var(--space-3);
+    align-items: center;
+  }
+  .param + .param { padding-top: var(--space-4); border-top: 1px solid var(--color-border); }
+  .param.is-off { opacity: 0.6; }
+  .param-toggle { display: inline-flex; align-items: center; gap: var(--space-3); cursor: pointer; }
+  .param-slider { grid-area: slider; }
+  .param-number { grid-area: number; text-align: right; padding-inline: var(--space-2); }
+  .param-hint { grid-area: hint; margin: 0; }
+  .param-text { grid-area: slider; }
+
+  input[type="range"] {
+    width: 100%;
+    height: 20px;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--color-border-strong);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    margin-top: -6px;
+    width: 16px;
+    height: 16px;
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    border: 2px solid var(--color-surface);
+  }
+  input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--focus-ring); }
+  input[type="range"]:disabled::-webkit-slider-thumb { background: var(--color-border-strong); }
+
+  .answer-text { white-space: pre-wrap; word-wrap: break-word; }
+  .reasoning {
+    white-space: pre-wrap;
+    color: var(--color-text-secondary);
+    border-left: 2px solid var(--color-border);
+    padding-left: var(--space-4);
+  }
+  .meta { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+  .raw {
+    margin: 0;
+    padding: var(--space-4);
+    background-color: var(--color-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: auto;
+    max-height: 440px;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    white-space: pre;
+    tab-size: 2;
+  }
+  .headers { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); }
+  .wire-line { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--color-text-secondary); word-break: break-all; }
+  .icon { width: 18px; height: 18px; stroke-width: 1.75; }
+
+
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <nav class="nav page" :class="{ 'is-wide': advanced }">
+    <span class="nav-brand">
+      <span class="nav-brand-mark" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+        </svg>
+      </span>
+      AI Advent
+    </span>
+    <span class="chip" data-tone="neutral">Kotlin · Spring Boot · DeepSeek</span>
+  </nav>
+
+  <main class="page page-body stack stack-lg" :class="{ 'is-wide': advanced }">
+
+    <header class="stack stack-sm">
+      <h1 class="t-headline-md">Запрос к языковой модели через API</h1>
+      <p class="t-body-md t-secondary">
+        Форма отправляет запрос на бэкенд, тот обращается к DeepSeek и возвращает ответ.
+        Ключ живёт только на сервере и в браузер не попадает.
+      </p>
+    </header>
+
+    <div class="layout" :class="{ 'has-side': advanced }">
+      <div class="col-main stack stack-lg">
+      <section class="card">
+        <div class="field">
+          <label class="field-label" for="prompt">Запрос</label>
+          <textarea
+            id="prompt"
+            class="textarea"
+            rows="5"
+            v-model="prompt"
+            :disabled="loading"
+            placeholder="Спросите что-нибудь…"
+            @keydown.meta.enter="send"
+            @keydown.ctrl.enter="send"></textarea>
+          <p class="field-help">Cmd / Ctrl + Enter — отправить</p>
+        </div>
+
+        <div class="row-between" style="flex-wrap: wrap; gap: var(--space-4);">
+          <div class="row" style="gap: var(--space-5); flex-wrap: wrap;">
+            <select class="select" v-model="model" :disabled="loading" style="width: auto;">
+              <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
+            </select>
+
+            <label class="param-toggle">
+              <span class="switch">
+                <input type="checkbox" v-model="advanced">
+                <span class="switch-track"></span>
+                <span class="switch-thumb"></span>
+              </span>
+              <span class="t-body-sm">Продвинутый режим</span>
+            </label>
+          </div>
+
+          <div class="row">
+            <button class="btn btn-tertiary" v-if="answer || error" @click="reset" :disabled="loading">Очистить</button>
+            <button class="btn btn-primary" @click="send" :disabled="loading || !prompt.trim()">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>
+              </svg>
+              {{ loading ? 'Отправляю…' : 'Отправить' }}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card card-accent" data-accent="danger" v-if="error">
+        <div class="row" style="align-items: flex-start;">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
+               style="color: var(--color-danger); flex: none; margin-top: 2px;" aria-hidden="true">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+          </svg>
+          <div class="stack stack-sm">
+            <p class="card-title" style="margin: 0;">{{ error.message }}</p>
+            <ul class="card-body" style="margin: 0; padding-left: var(--space-5);" v-if="error.details.length">
+              <li v-for="(d, i) in error.details" :key="i">{{ d }}</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" v-if="answer">
+        <p class="card-eyebrow">Ответ</p>
+
+        <details v-if="answer.reasoning">
+          <summary class="t-label-sm t-muted" style="cursor: pointer;">Ход рассуждений модели</summary>
+          <div class="reasoning t-body-sm" style="margin-top: var(--space-3);">{{ answer.reasoning }}</div>
+        </details>
+
+        <div class="answer-text t-body-md">{{ answer.answer }}</div>
+
+      </section>
+
+      <section class="card" v-if="exchange">
+        <div class="row-between" style="flex-wrap: wrap; gap: var(--space-3);">
+          <div>
+            <p class="card-eyebrow">HTTP-обмен с DeepSeek</p>
+            <p class="card-body" style="margin: 0;">
+              Ровно те данные, которыми обменялись бэкенд и провайдер. Ключ в заголовке замаскирован.
+            </p>
+          </div>
+          <div class="tabs" role="tablist">
+            <button
+              class="tab" :class="{ 'is-active': tab === 'request' }"
+              role="tab" :aria-selected="tab === 'request'"
+              @click="tab = 'request'">Запрос</button>
+            <button
+              class="tab" :class="{ 'is-active': tab === 'response' }"
+              role="tab" :aria-selected="tab === 'response'"
+              @click="tab = 'response'">Ответ</button>
+          </div>
+        </div>
+
+        <p class="wire-line">
+          <template v-if="tab === 'request'">{{ exchange.method }} {{ exchange.url }}</template>
+          <template v-else>
+            HTTP {{ exchange.status ?? '—' }} ← {{ exchange.url }}
+          </template>
+        </p>
+
+        <div class="headers" v-if="tab === 'request'">
+          <template v-for="(v, k) in exchange.requestHeaders" :key="k">
+            <span class="t-mono-sm t-muted">{{ k }}:</span>
+            <span class="t-mono-sm">{{ v }}</span>
+          </template>
+        </div>
+
+        <pre class="raw">{{ wireBody }}</pre>
+
+        <div class="row" style="justify-content: flex-end;">
+          <span class="chip" :data-tone="exchange.status && exchange.status < 400 ? 'success' : 'danger'" v-if="exchange.status">
+            HTTP {{ exchange.status }}
+          </span>
+          <button class="btn btn-secondary btn-sm" @click="copyWire">{{ copied ? 'Скопировано' : 'Копировать' }}</button>
+        </div>
+      </section>
+      </div>
+
+      <aside class="col-side" v-if="advanced">
+        <section class="card" v-if="advanced">
+          <div class="row-between">
+            <p class="card-eyebrow" style="margin: 0;">Параметры генерации</p>
+            <button class="btn btn-tertiary btn-sm" @click="resetParams">Сбросить</button>
+          </div>
+          <p class="field-help" style="margin: 0;">
+            Выключенный параметр не уходит в API — модель берёт своё значение по умолчанию.
+          </p>
+
+          <p class="field-help is-error" v-if="model === 'deepseek-reasoner'" style="color: var(--color-warning);">
+            deepseek-reasoner игнорирует temperature, top_p и штрафы — на её ответ они не влияют.
+          </p>
+
+          <div class="stack stack-md">
+            <div class="param" :class="{ 'is-off': !params[d.key].on }" v-for="d in paramDefs" :key="d.key">
+              <label class="param-toggle">
+                <span class="switch">
+                  <input type="checkbox" v-model="params[d.key].on">
+                  <span class="switch-track"></span>
+                  <span class="switch-thumb"></span>
+                </span>
+                <span class="t-mono-sm">{{ d.label }}</span>
+              </label>
+              <input
+                class="param-slider"
+                type="range"
+                :min="d.min" :max="d.max" :step="d.step"
+                v-model.number="params[d.key].value"
+                :disabled="!params[d.key].on"
+                :aria-label="d.label">
+              <input
+                class="input param-number t-mono-sm"
+                type="number"
+                :min="d.min" :max="d.max" :step="d.step"
+                v-model.number="params[d.key].value"
+                :disabled="!params[d.key].on">
+              <p class="field-help param-hint" v-if="params[d.key].on">{{ d.hint }}</p>
+            </div>
+
+            <div class="param" :class="{ 'is-off': !stop.on }">
+              <label class="param-toggle">
+                <span class="switch">
+                  <input type="checkbox" v-model="stop.on">
+                  <span class="switch-track"></span>
+                  <span class="switch-thumb"></span>
+                </span>
+                <span class="t-mono-sm">stop</span>
+              </label>
+              <input
+                class="input param-text"
+                type="text"
+                v-model="stop.value"
+                :disabled="!stop.on"
+                placeholder="стоп-строки через запятую: ###, КОНЕЦ">
+              <p class="field-help param-hint" v-if="stop.on">Генерация обрывается на первой встреченной строке (до 16 штук).</p>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, reactive, computed, toRefs } = Vue;
+
+const paramDefs = [
+  { key: 'temperature',      label: 'temperature',       min: 0,  max: 2,    step: 0.1,  def: 1.0,
+    hint: 'Разброс ответа: 0 — код и математика, 1.0 — обычный диалог, 1.5 — творческие тексты.' },
+  { key: 'topP',             label: 'top_p',             min: 0,  max: 1,    step: 0.05, def: 1.0,
+    hint: 'Ядерная выборка: доля наиболее вероятных токенов, из которых выбирается следующий.' },
+  { key: 'maxTokens',        label: 'max_tokens',        min: 1,  max: 8192, step: 1,    def: 4096,
+    hint: 'Потолок длины ответа в токенах — по достижении лимита ответ обрывается.' },
+  { key: 'frequencyPenalty', label: 'frequency_penalty', min: -2, max: 2,    step: 0.1,  def: 0,
+    hint: 'Штраф за повтор одних и тех же слов: выше — меньше самоповторов.' },
+  { key: 'presencePenalty',  label: 'presence_penalty',  min: -2, max: 2,    step: 0.1,  def: 0,
+    hint: 'Штраф за возврат к уже затронутым темам: выше — охотнее уходит в новое.' },
+];
+
+createApp({
+  setup() {
+    const state = reactive({
+      prompt: '',
+      model: 'deepseek-chat',
+      models: ['deepseek-chat'],
+      advanced: false,
+      loading: false,
+      answer: null,
+      error: null,
+      params: Object.fromEntries(paramDefs.map(d => [d.key, { on: false, value: d.def }])),
+      stop: { on: false, value: '' },
+      tab: 'request',
+      copied: false,
+    });
+
+    // Обмен показываем и для удачного ответа, и для ошибки провайдера.
+    const exchange = computed(() => state.answer?.exchange ?? state.error?.exchange ?? null);
+
+    const wireBody = computed(() => {
+      const ex = exchange.value;
+      if (!ex) return '';
+      const raw = state.tab === 'request' ? ex.requestBody : ex.responseBody;
+      if (!raw) return 'Ответа не было — запрос не дошёл до провайдера.';
+      try {
+        return JSON.stringify(JSON.parse(raw), null, 2);
+      } catch {
+        return raw;
+      }
+    });
+
+    async function copyWire() {
+      try {
+        await navigator.clipboard.writeText(wireBody.value);
+        state.copied = true;
+        setTimeout(() => { state.copied = false; }, 1500);
+      } catch { /* буфер обмена недоступен — не мешаем работе */ }
+    }
+
+    fetch('/api/models')
+      .then(r => r.json())
+      .then(d => { state.models = d.models; state.model = d.defaultModel; })
+      .catch(() => {});
+
+    function collectParams() {
+      const out = {};
+      for (const d of paramDefs) {
+        const p = state.params[d.key];
+        if (p.on && p.value !== null && p.value !== '') out[d.key] = Number(p.value);
+      }
+      if (state.stop.on) {
+        const list = state.stop.value.split(',').map(s => s.trim()).filter(Boolean);
+        if (list.length) out.stop = list;
+      }
+      return Object.keys(out).length ? out : null;
+    }
+
+    async function send() {
+      if (state.loading || !state.prompt.trim()) return;
+      state.loading = true;
+      state.error = null;
+      state.answer = null;
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: state.prompt,
+            model: state.model,
+            params: state.advanced ? collectParams() : null,
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          state.error = { message: data?.error ?? ('Ошибка ' + res.status), details: data?.details ?? [] };
+          return;
+        }
+        state.answer = data;
+        state.tab = 'response';
+      } catch (e) {
+        state.error = { message: 'Сервер недоступен: ' + e.message, details: [] };
+      } finally {
+        state.loading = false;
+      }
+    }
+
+    function reset() {
+      state.answer = null;
+      state.error = null;
+    }
+
+    function resetParams() {
+      for (const d of paramDefs) {
+        state.params[d.key].on = false;
+        state.params[d.key].value = d.def;
+      }
+      state.stop.on = false;
+      state.stop.value = '';
+    }
+
+    return { ...toRefs(state), paramDefs, exchange, wireBody, copyWire, send, reset, resetParams };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
