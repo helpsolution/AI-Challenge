@@ -48,8 +48,42 @@
   .field-row .full { grid-column: 1 / -1; }
   .toggle { display: inline-flex; align-items: center; gap: var(--space-3); cursor: pointer; }
 
-  .seg { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-full); }
-  .seg .tab { flex: 1 1 auto; }
+  .seg {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+  }
+  .seg-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .seg-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .seg .tab { width: 100%; padding-inline: var(--space-2); justify-content: center; text-align: center; }
+  .seg .tab.wide { grid-column: 1 / -1; }
+
+  input[type="range"] {
+    width: 100%;
+    height: 20px;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--color-border-strong);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    margin-top: -6px;
+    width: 16px;
+    height: 16px;
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    border: 2px solid var(--color-surface);
+  }
+  input[type="range"]:disabled::-webkit-slider-thumb { background: var(--color-border-strong); }
 
   .answer-text { white-space: pre-wrap; word-wrap: break-word; }
   .meta { display: flex; flex-wrap: wrap; gap: var(--space-2); }
@@ -227,7 +261,7 @@
             <label class="field-label">Формат ответа</label>
             <div class="seg">
               <button
-                v-for="f in formats" :key="f.value"
+                v-for="f in formats" :key="f.value" :class="{ wide: f.wide }"
                 class="tab" :class="{ 'is-active': constraints.format === f.value }"
                 :aria-selected="constraints.format === f.value"
                 @click="constraints.format = f.value">{{ f.label }}</button>
@@ -262,7 +296,8 @@
               <span class="t-mono-sm">макс. слов</span>
             </label>
             <input class="input t-mono-sm" type="number" min="1" max="4000" style="text-align: right;"
-                   v-model.number="limits.maxWords.value" :disabled="!limits.maxWords.on">
+                   v-model.number="limits.maxWords.value" :disabled="!limits.maxWords.on"
+                   @change="limits.maxWords.value = clamp(limits.maxWords.value, 1, 4000)">
           </div>
 
           <div class="field-row" :class="{ 'is-off': !limits.maxItems.on }">
@@ -274,7 +309,8 @@
               <span class="t-mono-sm">макс. пунктов</span>
             </label>
             <input class="input t-mono-sm" type="number" min="1" max="100" style="text-align: right;"
-                   v-model.number="limits.maxItems.value" :disabled="!limits.maxItems.on">
+                   v-model.number="limits.maxItems.value" :disabled="!limits.maxItems.on"
+                   @change="limits.maxItems.value = clamp(limits.maxItems.value, 1, 100)">
           </div>
 
           <div class="field-row" :class="{ 'is-off': !limits.maxTokens.on }">
@@ -286,7 +322,8 @@
               <span class="t-mono-sm">max_tokens</span>
             </label>
             <input class="input t-mono-sm" type="number" min="1" max="8192" style="text-align: right;"
-                   v-model.number="limits.maxTokens.value" :disabled="!limits.maxTokens.on">
+                   v-model.number="limits.maxTokens.value" :disabled="!limits.maxTokens.on"
+                   @change="limits.maxTokens.value = clamp(limits.maxTokens.value, 1, 8192)">
           </div>
 
           <div class="divider"></div>
@@ -300,11 +337,11 @@
               </span>
               <span class="t-mono-sm">stop-последовательность</span>
             </label>
-            <input class="input t-mono-sm full" type="text" placeholder="###"
-                   v-model="limits.stopSequence.value" :disabled="!limits.stopSequence.on">
-            <p class="field-help full" v-if="limits.stopSequence.on">
-              Провайдер обрывает генерацию, как только встретит эту строку.
-            </p>
+            <template v-if="limits.stopSequence.on">
+              <input class="input t-mono-sm full" type="text" placeholder="###" maxlength="32"
+                     v-model="limits.stopSequence.value">
+              <p class="field-help full">Провайдер обрывает генерацию, как только встретит эту строку.</p>
+            </template>
           </div>
 
           <div class="field-row" :class="{ 'is-off': !constraints.endMarkerInstruction }">
@@ -315,8 +352,11 @@
               </span>
               <span class="t-mono-sm">инструкция «закончи маркером»</span>
             </label>
-            <input class="input t-mono-sm full" type="text" placeholder="###"
-                   v-model="constraints.endMarker" :disabled="!constraints.endMarkerInstruction">
+            <template v-if="constraints.endMarkerInstruction">
+              <input class="input t-mono-sm full" type="text" placeholder="###" maxlength="32"
+                     v-model="constraints.endMarker">
+              <p class="field-help full">Модель поставит маркер в конце — по нему проверяется завершённость.</p>
+            </template>
           </div>
 
           <div class="divider"></div>
@@ -330,16 +370,34 @@
               </span>
               <span class="t-mono-sm">temperature</span>
             </label>
-            <input class="input t-mono-sm" type="number" min="0" max="2" step="0.1" style="text-align: right;"
-                   v-model.number="limits.temperature.value" :disabled="!limits.temperature.on">
-            <p class="field-help full" v-if="limits.temperature.on">
-              0 — самый предсказуемый ответ; влияет на стабильность формата.
-            </p>
+            <span class="t-mono-sm" style="text-align: right;">{{ limits.temperature.value.toFixed(1) }}</span>
+
+            <template v-if="limits.temperature.on">
+              <div class="seg seg-3 full">
+                <button
+                  v-for="t in temperaturePresets" :key="t.value"
+                  class="tab" :class="{ 'is-active': limits.temperature.value === t.value }"
+                  :aria-selected="limits.temperature.value === t.value"
+                  @click="limits.temperature.value = t.value">{{ t.label }}</button>
+              </div>
+              <input class="full" type="range" min="0" max="2" step="0.1"
+                     v-model.number="limits.temperature.value" aria-label="temperature">
+              <p class="field-help full">{{ temperatureHint }}</p>
+            </template>
           </div>
 
-          <div class="field-row">
-            <span class="t-mono-sm">прогонов стабильности</span>
-            <input class="input t-mono-sm" type="number" min="2" max="8" style="text-align: right;" v-model.number="runs">
+          <div class="divider"></div>
+          <p class="t-label-sm t-muted" style="margin: 0;">Проверка стабильности</p>
+
+          <div class="field">
+            <label class="field-label">Сколько прогонов</label>
+            <div class="seg seg-4">
+              <button
+                v-for="n in [2, 3, 5, 8]" :key="n"
+                class="tab" :class="{ 'is-active': runs === n }"
+                :aria-selected="runs === n"
+                @click="runs = n">{{ n }}</button>
+            </div>
           </div>
         </section>
       </aside>
@@ -357,7 +415,14 @@ const FORMATS = [
   { value: 'JSON', label: 'JSON' },
   { value: 'BULLETS', label: 'Список' },
   { value: 'TABLE', label: 'Таблица' },
-  { value: 'SENTENCE', label: 'Одно предложение' },
+  { value: 'SENTENCE', label: 'Одно предложение', wide: true },
+];
+
+// Значения из рекомендаций DeepSeek под тип задачи.
+const TEMPERATURE_PRESETS = [
+  { value: 0, label: 'Точный', hint: '0.0 — код, данные, извлечение фактов. Самый предсказуемый ответ и самый стабильный формат.' },
+  { value: 1, label: 'Обычный', hint: '1.0 — значение провайдера по умолчанию: обычный диалог.' },
+  { value: 1.5, label: 'Творческий', hint: '1.5 — тексты и идеи. Формат держится хуже: хорошая проверка на прочность ограничений.' },
 ];
 
 const RECIPE_SCHEMA = `{
@@ -401,6 +466,7 @@ const app = createApp({
       error: null,
       formats: FORMATS,
       presets: PRESETS,
+      temperaturePresets: TEMPERATURE_PRESETS,
       constraints: {
         format: 'FREE',
         jsonSchema: RECIPE_SCHEMA,
@@ -420,6 +486,22 @@ const app = createApp({
     });
 
     const busy = computed(() => state.busyKind !== null);
+
+    const temperatureHint = computed(() => {
+      const v = state.limits.temperature.value;
+      const exact = TEMPERATURE_PRESETS.find(t => t.value === v);
+      if (exact) return exact.hint;
+      if (v < 0.5) return 'Ниже 0.5 — ответы почти не меняются от прогона к прогону.';
+      if (v > 1.2) return 'Выше 1.2 — модель заметно фантазирует; формат стоит проверить прогонами.';
+      return 'Промежуточное значение между предсказуемостью и разнообразием.';
+    });
+
+    /** Число из поля ввода приводим к допустимому диапазону: иначе бэкенд ответит 400. */
+    function clamp(value, min, max) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return min;
+      return Math.min(max, Math.max(min, n));
+    }
 
     const determinismTone = computed(() => {
       const d = state.determinism;
@@ -522,8 +604,8 @@ const app = createApp({
     }
 
     return {
-      ...toRefs(state), busy, determinismTone, determinismVerdict,
-      compare, checkDeterminism, applyPreset, resetConstraints,
+      ...toRefs(state), busy, determinismTone, determinismVerdict, temperatureHint,
+      clamp, compare, checkDeterminism, applyPreset, resetConstraints,
     };
   },
 });
