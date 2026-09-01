@@ -156,14 +156,21 @@
             </button>
           </div>
 
+          <p class="field-help" style="margin: 0;">
+            <strong>Сравнить</strong> — один запрос двумя прогонами: свободным и зажатым.
+            <strong>Прогнать {{ runsLabel }}</strong> — тот же зажатый запрос несколько раз подряд,
+            чтобы увидеть, повторяется структура ответа или плывёт.
+          </p>
+
           <div class="row-between" style="flex-wrap: wrap; gap: var(--space-4);">
             <select class="select" v-model="model" :disabled="busy" style="width: auto;">
               <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
             </select>
 
             <div class="row">
-              <button class="btn btn-secondary" @click="checkDeterminism" :disabled="busy || !prompt.trim()">
-                {{ busyKind === 'determinism' ? 'Прогоняю…' : `Стабильность × ${runs}` }}
+              <button class="btn btn-secondary" @click="checkDeterminism" :disabled="busy || !prompt.trim()"
+                      title="Отправить тот же запрос с теми же ограничениями несколько раз и сравнить структуру ответов">
+{{ busyKind === 'determinism' ? `Прогоняю ${runsLabel}…` : `Прогнать ${runsLabel}` }}
               </button>
               <button class="btn btn-primary" @click="compare" :disabled="busy || !prompt.trim()">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -203,9 +210,10 @@
         <section class="card" v-if="determinism">
           <div class="row-between" style="flex-wrap: wrap; gap: var(--space-3);">
             <div>
-              <p class="card-eyebrow">Стабильность формата</p>
+              <p class="card-eyebrow">Повторяемость формата</p>
               <p class="card-body" style="margin: 0;">
-                Один и тот же зажатый запрос — {{ determinism.runs }} независимых прогона.
+                Один и тот же зажатый запрос — {{ determinism.runs }} {{ runWord(determinism.runs) }} подряд.
+                Значения ответов различаются всегда; сравнивается структура.
               </p>
             </div>
             <span class="chip" :data-tone="determinismTone">{{ determinismVerdict }}</span>
@@ -222,7 +230,9 @@
           </div>
 
           <div class="stack stack-sm" v-if="determinism.structureGroups.length">
-            <p class="t-label-sm t-muted" style="margin: 0;">Структуры JSON (отпечаток без значений)</p>
+            <p class="t-label-sm t-muted" style="margin: 0;">
+              Структуры JSON: набор ключей и типов без значений
+            </p>
             <div v-for="(g, i) in determinism.structureGroups" :key="i" class="stack stack-sm">
               <div class="row">
                 <span class="chip" :data-tone="determinism.structureGroups.length === 1 ? 'success' : 'warning'">
@@ -387,10 +397,10 @@
           </div>
 
           <div class="divider"></div>
-          <p class="t-label-sm t-muted" style="margin: 0;">Проверка стабильности</p>
+          <p class="t-label-sm t-muted" style="margin: 0;">Повторяемость формата</p>
 
           <div class="field">
-            <label class="field-label">Сколько прогонов</label>
+            <label class="field-label">Сколько прогонов подряд</label>
             <div class="seg seg-4">
               <button
                 v-for="n in [2, 3, 5, 8]" :key="n"
@@ -486,6 +496,19 @@ const app = createApp({
     });
 
     const busy = computed(() => state.busyKind !== null);
+
+    // 2 раза, 5 раз — русское склонение не выводится из числа автоматически.
+    const runsLabel = computed(() => {
+      const n = Number(state.runs);
+      const form = n % 10 === 1 && n % 100 !== 11 ? 'раз' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'раза' : 'раз');
+      return `${n} ${form}`;
+    });
+
+    function runWord(n) {
+      if (n % 10 === 1 && n % 100 !== 11) return 'прогон';
+      if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) return 'прогона';
+      return 'прогонов';
+    }
 
     const temperatureHint = computed(() => {
       const v = state.limits.temperature.value;
@@ -604,8 +627,8 @@ const app = createApp({
     }
 
     return {
-      ...toRefs(state), busy, determinismTone, determinismVerdict, temperatureHint,
-      clamp, compare, checkDeterminism, applyPreset, resetConstraints,
+      ...toRefs(state), busy, determinismTone, determinismVerdict, temperatureHint, runsLabel,
+      clamp, runWord, compare, checkDeterminism, applyPreset, resetConstraints,
     };
   },
 });
