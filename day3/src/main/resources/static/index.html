@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Advent — способы рассуждения</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+
+<style>
+  /* Локальный CSS — только раскладка и то, чего нет в дизайн-системе. */
+  [v-cloak] { display: none; }
+
+  .page {
+    width: 100%;
+    max-width: 1320px;
+    margin-inline: auto;
+    padding-inline: var(--space-6);
+  }
+  .page-body { padding-block: var(--space-8) var(--space-12); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: var(--space-6);
+    align-items: start;
+  }
+  .col-side {
+    position: sticky;
+    top: var(--space-6);
+    max-height: calc(100vh - var(--space-8));
+    overflow-y: auto;
+  }
+  .results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); align-items: start; }
+
+  @media (max-width: 1180px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .col-side { position: static; max-height: none; }
+    .results { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  .toggle { display: inline-flex; align-items: center; gap: var(--space-3); cursor: pointer; }
+  .meta { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .icon { width: 18px; height: 18px; stroke-width: 1.75; }
+
+  .seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px;
+         background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+  .seg .tab { width: 100%; padding-inline: var(--space-2); justify-content: center; text-align: center; }
+
+  input[type="range"] { width: 100%; height: 20px; appearance: none; background: transparent; cursor: pointer; }
+  input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: var(--radius-full); background: var(--color-border-strong); }
+  input[type="range"]::-webkit-slider-thumb { appearance: none; margin-top: -6px; width: 16px; height: 16px;
+    border-radius: var(--radius-full); background: var(--color-primary); border: 2px solid var(--color-surface); }
+
+  /* Выбор способа: чекбокс, название и краткое описание одним блоком. */
+  .pick { display: grid; grid-template-columns: 18px 1fr; gap: var(--space-2) var(--space-3); cursor: pointer; align-items: start; }
+  .pick + .pick { padding-top: var(--space-3); border-top: 1px solid var(--color-border); margin-top: var(--space-3); }
+  .pick input { margin-top: 3px; }
+  .pick-note { grid-column: 2; margin: 0; }
+
+  /* Финальный ответ способа — единственное, что сравнивается между карточками. */
+  .verdict {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: var(--color-elevated);
+    font-family: var(--font-mono);
+    font-size: 0.9375rem;
+    word-break: break-word;
+  }
+  .verdict.is-empty { color: var(--color-text-faint); font-family: var(--font-sans); }
+
+  .answer-text { white-space: pre-wrap; word-wrap: break-word; max-height: 420px; overflow-y: auto; }
+  .section-title { margin: 0; }
+  .section-body { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
+
+  .raw, .mono-block {
+    margin: 0;
+    padding: var(--space-4);
+    background-color: var(--color-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .raw { max-height: 320px; white-space: pre; }
+  .mono-block { max-height: 240px; }
+  .headers { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); }
+  .wire-line { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--color-text-secondary); word-break: break-all; }
+
+  .cmp { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+  .cmp th, .cmp td { text-align: left; padding: var(--space-3) var(--space-3); border-bottom: 1px solid var(--color-border); vertical-align: top; }
+  .cmp th { font-size: 0.75rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-secondary); }
+  .cmp td.num, .cmp th.num { text-align: right; font-family: var(--font-mono); white-space: nowrap; }
+  .cmp tr:last-child td { border-bottom: none; }
+  .cmp-wrap { overflow-x: auto; }
+
+  .step + .step { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--color-border); }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <nav class="nav page">
+    <span class="nav-brand">
+      <span class="nav-brand-mark" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+        </svg>
+      </span>
+      AI Advent
+    </span>
+    <span class="chip" data-tone="neutral">Kotlin · Spring Boot · DeepSeek</span>
+  </nav>
+
+  <main class="page page-body stack stack-lg">
+
+    <header class="stack stack-sm">
+      <h1 class="t-headline-md">Одна задача, четыре способа рассуждения</h1>
+      <p class="t-body-md t-secondary">
+        Задача, модель и температура одни и те же — меняется только промпт. Прямой вопрос,
+        требование решать пошагово, промпт, сочинённый самой моделью, и группа экспертов внутри
+        одного запроса. Каждая инструкция показана целиком, финальные ответы сведены в одну таблицу.
+      </p>
+    </header>
+
+    <div class="layout">
+      <div class="col-main stack stack-lg">
+
+        <section class="card">
+          <div class="field">
+            <label class="field-label" for="task">Задача</label>
+            <textarea
+              id="task" class="textarea" rows="4"
+              v-model="task" :disabled="busy"
+              placeholder="Например: сколько раз в сутки часовая и минутная стрелки образуют прямой угол?"
+              @keydown.meta.enter="solve" @keydown.ctrl.enter="solve"></textarea>
+            <p class="field-help">Cmd / Ctrl + Enter — решить</p>
+          </div>
+
+          <div class="row" style="flex-wrap: wrap; gap: var(--space-2);">
+            <span class="t-label-sm t-muted" style="margin-right: var(--space-2);">Примеры:</span>
+            <button class="btn btn-secondary btn-sm" v-for="p in presets" :key="p.name"
+                    :title="p.hint" @click="task = p.task">{{ p.name }}</button>
+          </div>
+
+          <div class="row-between" style="flex-wrap: wrap; gap: var(--space-4);">
+            <select class="select" v-model="model" :disabled="busy" style="width: auto;">
+              <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
+            </select>
+
+            <button class="btn btn-primary" @click="solve" :disabled="busy || !task.trim() || !selected.length">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3v3"/><path d="M18.5 6.5 16.4 8.6"/><path d="M21 13h-3"/><path d="M6 13H3"/>
+                <path d="M7.6 8.6 5.5 6.5"/><path d="M9 20h6"/><path d="M10 17a5 5 0 1 1 4 0z"/>
+              </svg>
+              {{ busy ? 'Решаю…' : `Решить ${waysLabel}` }}
+            </button>
+          </div>
+
+          <p class="field-help" style="margin: 0;">
+            Всего запросов к API: <strong>{{ plannedCalls }}</strong>. Способы идут параллельно.
+          </p>
+        </section>
+
+        <section class="card card-accent" data-accent="danger" v-if="error">
+          <div class="row" style="align-items: flex-start;">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
+                 style="color: var(--color-danger); flex: none; margin-top: 2px;" aria-hidden="true">
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+            </svg>
+            <div class="stack stack-sm">
+              <p class="card-title" style="margin: 0;">{{ error.message }}</p>
+              <ul class="card-body" style="margin: 0; padding-left: var(--space-5);" v-if="error.details.length">
+                <li v-for="(d, i) in error.details" :key="i">{{ d }}</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" v-if="result">
+          <div class="row-between" style="flex-wrap: wrap; gap: var(--space-3);">
+            <div>
+              <p class="card-eyebrow">Сравнение</p>
+              <p class="card-body" style="margin: 0;">
+                Сравниваются строки, а не смысл: «44» и «44 раза» — один ответ, «один фрукт»
+                и «1 фрукт» — разные. И совпадение ответов ещё не означает правильность:
+                судить, какой способ точнее, по-прежнему вам.
+              </p>
+            </div>
+            <span class="chip" :data-tone="agreementTone">{{ agreementVerdict }}</span>
+          </div>
+
+          <div class="meta">
+            <span class="chip" data-tone="neutral">способов: {{ result.runs.length }}</span>
+            <span class="chip" data-tone="neutral">запросов: {{ totalCalls }}</span>
+            <span class="chip" data-tone="neutral">токенов ответа: {{ totalCompletionTokens }}</span>
+            <span class="chip" data-tone="neutral">время прогона: {{ result.wallClockMs }} ms</span>
+            <span class="chip" data-tone="info" v-if="result.comparison.fastest">
+              быстрее всех: {{ titleOf(result.comparison.fastest) }}
+            </span>
+            <span class="chip" data-tone="info" v-if="result.comparison.leanest">
+              короче всех: {{ titleOf(result.comparison.leanest) }}
+            </span>
+          </div>
+
+          <div class="cmp-wrap">
+            <table class="cmp">
+              <thead>
+                <tr>
+                  <th>Способ</th>
+                  <th>Финальный ответ</th>
+                  <th class="num">Запросов</th>
+                  <th class="num">Токенов ответа</th>
+                  <th class="num">Время</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in result.runs" :key="r.technique">
+                  <td>{{ r.title }}</td>
+                  <td>
+                    <span v-if="r.failure" class="t-body-sm" style="color: var(--color-danger);">способ не отработал</span>
+                    <span v-else-if="r.finalAnswer" class="t-mono-sm">{{ r.finalAnswer }}</span>
+                    <span v-else class="t-body-sm t-muted">не выделен</span>
+                  </td>
+                  <td class="num">{{ r.calls || '—' }}</td>
+                  <td class="num">{{ r.completionTokens || '—' }}</td>
+                  <td class="num">{{ r.latencyMs ? r.latencyMs + ' ms' : '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <template v-if="result.comparison.groups.length > 1">
+            <div class="divider"></div>
+            <p class="t-label-sm t-muted" style="margin: 0;">Ответы разошлись на группы</p>
+            <div class="stack stack-sm">
+              <div v-for="(g, i) in result.comparison.groups" :key="i" class="row" style="flex-wrap: wrap;">
+                <span class="chip" data-tone="neutral">× {{ g.count }}</span>
+                <span class="t-mono-sm">{{ g.answer }}</span>
+                <span class="t-body-sm t-muted">— {{ g.techniques.map(titleOf).join(', ') }}</span>
+              </div>
+            </div>
+          </template>
+        </section>
+
+        <div class="results" v-if="result">
+          <technique-card v-for="r in result.runs" :key="r.technique" :run="r"></technique-card>
+        </div>
+
+      </div>
+
+      <aside class="col-side stack stack-lg">
+        <section class="card">
+          <p class="card-eyebrow" style="margin: 0;">Способы</p>
+
+          <label class="pick check" v-for="t in techniques" :key="t.id">
+            <input type="checkbox" :value="t.id" v-model="selected">
+            <span class="t-body-sm" style="font-weight: 500;">
+              {{ t.title }}
+              <span class="chip" data-tone="neutral" style="margin-left: var(--space-2);">
+                {{ t.calls }} {{ t.calls === 1 ? 'запрос' : 'запроса' }}
+              </span>
+            </span>
+            <p class="field-help pick-note">{{ t.summary }}</p>
+          </label>
+        </section>
+
+        <section class="card">
+          <p class="card-eyebrow" style="margin: 0;">Общая добавка</p>
+
+          <label class="toggle">
+            <span class="switch">
+              <input type="checkbox" v-model="requireAnswerLine">
+              <span class="switch-track"></span><span class="switch-thumb"></span>
+            </span>
+            <span class="t-body-sm">требовать финальную строку</span>
+          </label>
+
+          <template v-if="requireAnswerLine">
+            <input class="input t-mono-sm" type="text" maxlength="32" v-model="answerMarker" placeholder="ОТВЕТ:">
+            <p class="field-help">
+              Единственная инструкция, которая добавляется ко всем способам сразу — включая прямой ответ.
+              Без неё финальные ответы не с чем сопоставлять, но прямой запрос перестаёт быть совсем голым.
+            </p>
+          </template>
+          <p class="field-help" v-else>
+            Способы идут ровно так, как описаны: у прямого ответа нет ни одной инструкции.
+            Финальный ответ берётся из последней строки — это грубее и иногда промахивается.
+          </p>
+        </section>
+
+        <section class="card">
+          <p class="card-eyebrow" style="margin: 0;">Температура</p>
+
+          <label class="toggle">
+            <span class="switch">
+              <input type="checkbox" v-model="temperature.on">
+              <span class="switch-track"></span><span class="switch-thumb"></span>
+            </span>
+            <span class="t-mono-sm">temperature = {{ temperature.value.toFixed(1) }}</span>
+          </label>
+
+          <template v-if="temperature.on">
+            <div class="seg">
+              <button v-for="t in temperaturePresets" :key="t.value"
+                      class="tab" :class="{ 'is-active': temperature.value === t.value }"
+                      :aria-selected="temperature.value === t.value"
+                      @click="temperature.value = t.value">{{ t.label }}</button>
+            </div>
+            <input type="range" min="0" max="2" step="0.1" v-model.number="temperature.value" aria-label="temperature">
+            <p class="field-help">{{ temperatureHint }}</p>
+          </template>
+          <p class="field-help" v-else>
+            Выключено — берётся значение провайдера по умолчанию (1.0). При нём часть расхождений
+            между способами объясняется не промптом, а случайностью.
+          </p>
+        </section>
+      </aside>
+    </div>
+
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, reactive, computed, toRefs } = Vue;
+
+// Значения из рекомендаций DeepSeek под тип задачи.
+const TEMPERATURE_PRESETS = [
+  { value: 0, label: 'Точный', hint: '0.0 — рассуждение и вычисления. Расхождения между способами объясняются промптом, а не случайностью.' },
+  { value: 1, label: 'Обычный', hint: '1.0 — значение провайдера по умолчанию: обычный диалог.' },
+  { value: 1.5, label: 'Творческий', hint: '1.5 — тексты и идеи. Для логической задачи слишком много шума.' },
+];
+
+// Задачи с ловушкой: прямой ответ на них ошибается заметно чаще, чем разобранный по шагам.
+const PRESETS = [
+  {
+    name: 'Стрелки часов',
+    hint: 'Классическая ловушка: очевидные 48 — неверный ответ.',
+    task: 'Сколько раз в сутки часовая и минутная стрелки часов образуют прямой угол? Обоснуй.',
+  },
+  {
+    name: 'Возраст сестры',
+    hint: 'Ловушка на разницу возрастов, а не на отношение.',
+    task: 'Когда мне было 3 года, моей сестре было вдвое меньше лет, чем мне. Сейчас мне 40 лет. Сколько лет сестре?',
+  },
+  {
+    name: 'Три коробки',
+    hint: 'Логическая задача на минимум действий.',
+    task: 'Есть три закрытые коробки с наклейками «яблоки», «апельсины» и «яблоки и апельсины». Известно, что все три наклейки стоят неверно. Сколько фруктов минимально нужно достать (не заглядывая внутрь) и из какой коробки, чтобы точно определить содержимое всех трёх?',
+  },
+  {
+    name: 'Падение конверсии',
+    hint: 'Аналитика: считать нужно абсолют, а не проценты.',
+    task: 'Конверсия сайта упала с 3,0% до 2,4%, при этом трафик за тот же период вырос на 40%. Что произошло с абсолютным числом заказов и с чего начать разбор причин?',
+  },
+  {
+    name: 'Одиночка в массиве',
+    hint: 'Алгоритмическая: ожидается XOR, а не хеш-таблица.',
+    task: 'Дан массив из n целых чисел, в котором ровно одно число встречается один раз, а все остальные — ровно по два раза. Найди это число за O(n) времени и O(1) дополнительной памяти. Объясни, почему решение верное.',
+  },
+];
+
+const app = createApp({
+  setup() {
+    const state = reactive({
+      task: PRESETS[0].task,
+      model: 'deepseek-chat',
+      models: ['deepseek-chat'],
+      techniques: [],
+      selected: [],
+      requireAnswerLine: true,
+      answerMarker: 'ОТВЕТ:',
+      // По умолчанию 0: сравниваются способы, а не разброс генерации.
+      temperature: { on: true, value: 0 },
+      presets: PRESETS,
+      temperaturePresets: TEMPERATURE_PRESETS,
+      busy: false,
+      result: null,
+      error: null,
+    });
+
+    const plannedCalls = computed(() =>
+      state.techniques.filter(t => state.selected.includes(t.id)).reduce((sum, t) => sum + t.calls, 0));
+
+    const waysLabel = computed(() => {
+      const n = state.selected.length;
+      if (n % 10 === 1 && n % 100 !== 11) return `${n} способом`;
+      return `${n} способами`;
+    });
+
+    const temperatureHint = computed(() => {
+      const v = state.temperature.value;
+      const exact = TEMPERATURE_PRESETS.find(t => t.value === v);
+      if (exact) return exact.hint;
+      if (v < 0.5) return 'Ниже 0.5 — ответы почти не меняются от прогона к прогону.';
+      if (v > 1.2) return 'Выше 1.2 — модель заметно фантазирует, для логической задачи это лишнее.';
+      return 'Промежуточное значение между предсказуемостью и разнообразием.';
+    });
+
+    const agreementTone = computed(() => {
+      const a = state.result?.comparison?.allAgree;
+      if (a === true) return 'success';
+      if (a === false) return 'warning';
+      return 'neutral';
+    });
+
+    const agreementVerdict = computed(() => {
+      const c = state.result?.comparison;
+      if (!c) return '';
+      if (c.allAgree === true) return 'финальный ответ у всех совпал';
+      if (c.allAgree === false) return `ответы разошлись: вариантов ${c.groups.length}`;
+      return 'сравнивать не с чем';
+    });
+
+    const totalCalls = computed(() => (state.result?.runs ?? []).reduce((s, r) => s + r.calls, 0));
+    const totalCompletionTokens = computed(() => (state.result?.runs ?? []).reduce((s, r) => s + r.completionTokens, 0));
+
+    function titleOf(id) {
+      return state.techniques.find(t => t.id === id)?.title ?? id;
+    }
+
+    fetch('/api/models')
+      .then(r => r.json())
+      .then(d => { state.models = d.models; state.model = d.defaultModel; })
+      .catch(() => {});
+
+    fetch('/api/techniques')
+      .then(r => r.json())
+      .then(d => { state.techniques = d; state.selected = d.map(t => t.id); })
+      .catch(() => {});
+
+    async function solve() {
+      if (state.busy || !state.task.trim() || !state.selected.length) return;
+      state.busy = true;
+      state.error = null;
+      try {
+        const res = await fetch('/api/solve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            task: state.task,
+            model: state.model,
+            params: state.temperature.on ? { temperature: Number(state.temperature.value) } : null,
+            // Порядок способов задаёт справочник, а не порядок кликов по чекбоксам.
+            techniques: state.techniques.map(t => t.id).filter(id => state.selected.includes(id)),
+            requireAnswerLine: state.requireAnswerLine,
+            answerMarker: state.answerMarker,
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          state.error = { message: data?.error ?? ('Ошибка ' + res.status), details: data?.details ?? [] };
+          return;
+        }
+        state.result = data;
+      } catch (e) {
+        state.error = { message: 'Сервер недоступен: ' + e.message, details: [] };
+      } finally {
+        state.busy = false;
+      }
+    }
+
+    return {
+      ...toRefs(state), plannedCalls, waysLabel, temperatureHint,
+      agreementTone, agreementVerdict, totalCalls, totalCompletionTokens, titleOf, solve,
+    };
+  },
+});
+
+app.component('technique-card', {
+  props: { run: { type: Object, required: true } },
+  setup(props) {
+    const wireTab = Vue.ref({});
+
+    function body(step, which) {
+      const ex = step.exchange;
+      if (!ex) return '';
+      const raw = which === 'request' ? ex.requestBody : ex.responseBody;
+      if (!raw) return 'Ответа не было.';
+      try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
+    }
+
+    const tone = Vue.computed(() => props.run.failure ? 'danger' : 'info');
+
+    return { wireTab, body, tone };
+  },
+  template: `
+    <section class="card card-accent" :data-accent="tone">
+      <div class="row-between" style="flex-wrap: wrap; gap: var(--space-2);">
+        <p class="card-eyebrow" style="margin: 0;">{{ run.title }}</p>
+        <span class="chip" data-tone="neutral" v-if="run.calls">{{ run.calls }} {{ run.calls === 1 ? 'запрос' : 'запроса' }}</span>
+      </div>
+      <p class="card-body" style="margin: 0;">{{ run.summary }}</p>
+
+      <template v-if="run.failure">
+        <p class="t-body-sm" style="color: var(--color-danger); margin: 0;">{{ run.failure }}</p>
+      </template>
+
+      <template v-else>
+        <div class="verdict" :class="{ 'is-empty': !run.finalAnswer }">
+          {{ run.finalAnswer || 'Финальный ответ не выделен — смотрите текст решения.' }}
+        </div>
+
+        <div class="meta">
+          <span class="chip" data-tone="neutral" v-if="run.completionTokens">{{ run.completionTokens }} токенов</span>
+          <span class="chip" data-tone="neutral">{{ run.latencyMs }} ms</span>
+        </div>
+
+        <template v-if="run.sections.length">
+          <div class="divider"></div>
+          <div class="stack stack-sm" v-for="(s, i) in run.sections" :key="i">
+            <p class="t-label-sm t-muted section-title">{{ s.title }}</p>
+            <p class="t-body-sm section-body">{{ s.body }}</p>
+          </div>
+        </template>
+        <div class="answer-text t-body-md" v-else>{{ run.answer }}</div>
+
+        <details>
+          <summary class="t-label-sm t-muted" style="cursor: pointer;">Промпты и HTTP-обмен</summary>
+          <div style="margin-top: var(--space-4);">
+            <div class="step stack stack-sm" v-for="(s, i) in run.steps" :key="i">
+              <span class="chip" data-tone="info">{{ s.label }}</span>
+
+              <p class="t-label-sm t-muted" style="margin: 0;" v-if="s.systemPrompt">System-prompt</p>
+              <pre class="mono-block" v-if="s.systemPrompt">{{ s.systemPrompt }}</pre>
+              <p class="field-help" style="margin: 0;" v-else>System-prompt не отправлялся.</p>
+
+              <p class="t-label-sm t-muted" style="margin: 0;">Запрос пользователя</p>
+              <pre class="mono-block">{{ s.userPrompt }}</pre>
+
+              <div class="tabs" role="tablist" v-if="s.exchange">
+                <button class="tab" :class="{ 'is-active': (wireTab[i] || 'response') === 'request' }"
+                        @click="wireTab[i] = 'request'">HTTP-запрос</button>
+                <button class="tab" :class="{ 'is-active': (wireTab[i] || 'response') === 'response' }"
+                        @click="wireTab[i] = 'response'">HTTP-ответ</button>
+              </div>
+              <template v-if="s.exchange">
+                <p class="wire-line" v-if="(wireTab[i] || 'response') === 'request'">
+                  {{ s.exchange.method }} {{ s.exchange.url }}
+                </p>
+                <p class="wire-line" v-else>HTTP {{ s.exchange.status ?? '—' }} ← {{ s.exchange.url }}</p>
+                <div class="headers" v-if="(wireTab[i] || 'response') === 'request'">
+                  <template v-for="(v, k) in s.exchange.requestHeaders" :key="k">
+                    <span class="t-mono-sm t-muted">{{ k }}:</span>
+                    <span class="t-mono-sm">{{ v }}</span>
+                  </template>
+                </div>
+                <pre class="raw">{{ body(s, wireTab[i] || 'response') }}</pre>
+              </template>
+            </div>
+          </div>
+        </details>
+      </template>
+    </section>
+  `,
+});
+
+app.mount('#app');
+</script>
+</body>
+</html>

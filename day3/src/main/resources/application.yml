@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: day3
+  # Локально ключ удобно держать в .env рядом с проектом (файл в .gitignore).
+  # На сервере тот же ключ приходит обычной переменной окружения.
+  config:
+    import: optional:file:.env[.properties]
+
+server:
+  port: ${PORT:8082}
+
+llm:
+  deepseek:
+    base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+    api-key: ${DEEPSEEK_API_KEY:}
+    default-model: ${DEEPSEEK_MODEL:deepseek-chat}
+    allowed-models:
+      - deepseek-chat
+      - deepseek-reasoner
+    connect-timeout: 10s
+    read-timeout: 180s
+
+logging:
+  level:
+    advent.day3: INFO

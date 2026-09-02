@@ -4,7 +4,8 @@
 CLAUDE.md
 материалы/
 swarm-report/
-README.md
+# Только корневой: README внутри dayN — часть публикуемого задания.
+/README.md
 
 # --- Секреты ---
 .env
