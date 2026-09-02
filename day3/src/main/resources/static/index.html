@@ -34,12 +34,11 @@
     max-height: calc(100vh - var(--space-8));
     overflow-y: auto;
   }
-  .results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); align-items: start; }
+  .results { display: grid; gap: var(--space-6); }
 
   @media (max-width: 1180px) {
     .layout { grid-template-columns: minmax(0, 1fr); }
     .col-side { position: static; max-height: none; }
-    .results { grid-template-columns: minmax(0, 1fr); }
   }
 
   .toggle { display: inline-flex; align-items: center; gap: var(--space-3); cursor: pointer; }
@@ -73,9 +72,13 @@
   }
   .verdict.is-empty { color: var(--color-text-faint); font-family: var(--font-sans); }
 
-  .answer-text { white-space: pre-wrap; word-wrap: break-word; max-height: 420px; overflow-y: auto; }
-  .section-title { margin: 0; }
+  .answer-text { white-space: pre-wrap; word-wrap: break-word; }
   .section-body { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
+
+  /* Промпт слева, ответ справа: инструкция короткая, ответ длинный. */
+  .io { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+  .io-col { display: grid; gap: var(--space-2); align-content: start; }
+  @media (max-width: 900px) { .io { grid-template-columns: minmax(0, 1fr); } }
 
   .raw, .mono-block {
     margin: 0;
@@ -185,6 +188,10 @@
           </div>
         </section>
 
+        <div class="results" v-if="result">
+          <technique-card v-for="r in result.runs" :key="r.technique" :run="r"></technique-card>
+        </div>
+
         <section class="card" v-if="result">
           <div class="row-between" style="flex-wrap: wrap; gap: var(--space-3);">
             <div>
@@ -196,19 +203,6 @@
               </p>
             </div>
             <span class="chip" :data-tone="agreementTone">{{ agreementVerdict }}</span>
-          </div>
-
-          <div class="meta">
-            <span class="chip" data-tone="neutral">способов: {{ result.runs.length }}</span>
-            <span class="chip" data-tone="neutral">запросов: {{ totalCalls }}</span>
-            <span class="chip" data-tone="neutral">токенов ответа: {{ totalCompletionTokens }}</span>
-            <span class="chip" data-tone="neutral">время прогона: {{ result.wallClockMs }} ms</span>
-            <span class="chip" data-tone="info" v-if="result.comparison.fastest">
-              быстрее всех: {{ titleOf(result.comparison.fastest) }}
-            </span>
-            <span class="chip" data-tone="info" v-if="result.comparison.leanest">
-              короче всех: {{ titleOf(result.comparison.leanest) }}
-            </span>
           </div>
 
           <div class="cmp-wrap">
@@ -238,6 +232,11 @@
             </table>
           </div>
 
+          <p class="field-help" style="margin: 0;">
+            Прогон целиком — {{ result.wallClockMs }} ms при сумме по способам {{ totalLatency }} ms:
+            способы идут параллельно.
+          </p>
+
           <template v-if="result.comparison.groups.length > 1">
             <div class="divider"></div>
             <p class="t-label-sm t-muted" style="margin: 0;">Ответы разошлись на группы</p>
@@ -250,10 +249,6 @@
             </div>
           </template>
         </section>
-
-        <div class="results" v-if="result">
-          <technique-card v-for="r in result.runs" :key="r.technique" :run="r"></technique-card>
-        </div>
 
       </div>
 
@@ -421,8 +416,7 @@ const app = createApp({
       return 'сравнивать не с чем';
     });
 
-    const totalCalls = computed(() => (state.result?.runs ?? []).reduce((s, r) => s + r.calls, 0));
-    const totalCompletionTokens = computed(() => (state.result?.runs ?? []).reduce((s, r) => s + r.completionTokens, 0));
+    const totalLatency = computed(() => (state.result?.runs ?? []).reduce((s, r) => s + r.latencyMs, 0));
 
     function titleOf(id) {
       return state.techniques.find(t => t.id === id)?.title ?? id;
@@ -471,7 +465,7 @@ const app = createApp({
 
     return {
       ...toRefs(state), plannedCalls, waysLabel, temperatureHint,
-      agreementTone, agreementVerdict, totalCalls, totalCompletionTokens, titleOf, solve,
+      agreementTone, agreementVerdict, totalLatency, titleOf, solve,
     };
   },
 });
@@ -491,13 +485,20 @@ app.component('technique-card', {
 
     const tone = Vue.computed(() => props.run.failure ? 'danger' : 'info');
 
-    return { wireTab, body, tone };
+    const tabOf = (i) => wireTab.value[i] || 'response';
+    const isLast = (i) => i === props.run.steps.length - 1;
+
+    return { wireTab, body, tone, tabOf, isLast };
   },
   template: `
     <section class="card card-accent" :data-accent="tone">
       <div class="row-between" style="flex-wrap: wrap; gap: var(--space-2);">
         <p class="card-eyebrow" style="margin: 0;">{{ run.title }}</p>
-        <span class="chip" data-tone="neutral" v-if="run.calls">{{ run.calls }} {{ run.calls === 1 ? 'запрос' : 'запроса' }}</span>
+        <div class="meta">
+          <span class="chip" data-tone="neutral" v-if="run.calls">{{ run.calls }} {{ run.calls === 1 ? 'запрос' : 'запроса' }}</span>
+          <span class="chip" data-tone="neutral" v-if="run.completionTokens">{{ run.completionTokens }} токенов</span>
+          <span class="chip" data-tone="neutral" v-if="run.latencyMs">{{ run.latencyMs }} ms</span>
+        </div>
       </div>
       <p class="card-body" style="margin: 0;">{{ run.summary }}</p>
 
@@ -510,55 +511,55 @@ app.component('technique-card', {
           {{ run.finalAnswer || 'Финальный ответ не выделен — смотрите текст решения.' }}
         </div>
 
-        <div class="meta">
-          <span class="chip" data-tone="neutral" v-if="run.completionTokens">{{ run.completionTokens }} токенов</span>
-          <span class="chip" data-tone="neutral">{{ run.latencyMs }} ms</span>
-        </div>
+        <div class="step" v-for="(s, i) in run.steps" :key="i">
+          <span class="chip" data-tone="info" v-if="run.steps.length > 1"
+                style="margin-bottom: var(--space-3);">{{ s.label }}</span>
 
-        <template v-if="run.sections.length">
-          <div class="divider"></div>
-          <div class="stack stack-sm" v-for="(s, i) in run.sections" :key="i">
-            <p class="t-label-sm t-muted section-title">{{ s.title }}</p>
-            <p class="t-body-sm section-body">{{ s.body }}</p>
-          </div>
-        </template>
-        <div class="answer-text t-body-md" v-else>{{ run.answer }}</div>
-
-        <details>
-          <summary class="t-label-sm t-muted" style="cursor: pointer;">Промпты и HTTP-обмен</summary>
-          <div style="margin-top: var(--space-4);">
-            <div class="step stack stack-sm" v-for="(s, i) in run.steps" :key="i">
-              <span class="chip" data-tone="info">{{ s.label }}</span>
-
-              <p class="t-label-sm t-muted" style="margin: 0;" v-if="s.systemPrompt">System-prompt</p>
+          <div class="io">
+            <div class="io-col">
+              <p class="t-label-sm t-muted">System-prompt</p>
               <pre class="mono-block" v-if="s.systemPrompt">{{ s.systemPrompt }}</pre>
-              <p class="field-help" style="margin: 0;" v-else>System-prompt не отправлялся.</p>
+              <p class="field-help" style="margin: 0;" v-else>Не отправлялся.</p>
 
-              <p class="t-label-sm t-muted" style="margin: 0;">Запрос пользователя</p>
+              <p class="t-label-sm t-muted" style="margin-top: var(--space-2);">Запрос</p>
               <pre class="mono-block">{{ s.userPrompt }}</pre>
+            </div>
 
-              <div class="tabs" role="tablist" v-if="s.exchange">
-                <button class="tab" :class="{ 'is-active': (wireTab[i] || 'response') === 'request' }"
-                        @click="wireTab[i] = 'request'">HTTP-запрос</button>
-                <button class="tab" :class="{ 'is-active': (wireTab[i] || 'response') === 'response' }"
-                        @click="wireTab[i] = 'response'">HTTP-ответ</button>
-              </div>
-              <template v-if="s.exchange">
-                <p class="wire-line" v-if="(wireTab[i] || 'response') === 'request'">
-                  {{ s.exchange.method }} {{ s.exchange.url }}
-                </p>
-                <p class="wire-line" v-else>HTTP {{ s.exchange.status ?? '—' }} ← {{ s.exchange.url }}</p>
-                <div class="headers" v-if="(wireTab[i] || 'response') === 'request'">
-                  <template v-for="(v, k) in s.exchange.requestHeaders" :key="k">
-                    <span class="t-mono-sm t-muted">{{ k }}:</span>
-                    <span class="t-mono-sm">{{ v }}</span>
-                  </template>
+            <div class="io-col">
+              <p class="t-label-sm t-muted">Ответ</p>
+              <template v-if="isLast(i) && run.sections.length">
+                <div class="stack stack-sm" v-for="(sec, j) in run.sections" :key="j">
+                  <p class="t-label-sm t-primary">{{ sec.title }}</p>
+                  <p class="t-body-sm section-body">{{ sec.body }}</p>
                 </div>
-                <pre class="raw">{{ body(s, wireTab[i] || 'response') }}</pre>
               </template>
+              <div class="answer-text t-body-md" v-else>{{ s.answer }}</div>
             </div>
           </div>
-        </details>
+
+          <details v-if="s.exchange" style="margin-top: var(--space-4);">
+            <summary class="t-label-sm t-muted" style="cursor: pointer;">Реальный вызов API</summary>
+            <div class="stack stack-sm" style="margin-top: var(--space-3);">
+              <div class="tabs" role="tablist">
+                <button class="tab" :class="{ 'is-active': tabOf(i) === 'request' }"
+                        @click="wireTab[i] = 'request'">HTTP-запрос</button>
+                <button class="tab" :class="{ 'is-active': tabOf(i) === 'response' }"
+                        @click="wireTab[i] = 'response'">HTTP-ответ</button>
+              </div>
+              <p class="wire-line" v-if="tabOf(i) === 'request'">
+                {{ s.exchange.method }} {{ s.exchange.url }}
+              </p>
+              <p class="wire-line" v-else>HTTP {{ s.exchange.status ?? '—' }} ← {{ s.exchange.url }}</p>
+              <div class="headers" v-if="tabOf(i) === 'request'">
+                <template v-for="(v, k) in s.exchange.requestHeaders" :key="k">
+                  <span class="t-mono-sm t-muted">{{ k }}:</span>
+                  <span class="t-mono-sm">{{ v }}</span>
+                </template>
+              </div>
+              <pre class="raw">{{ body(s, tabOf(i)) }}</pre>
+            </div>
+          </details>
+        </div>
       </template>
     </section>
   `,
