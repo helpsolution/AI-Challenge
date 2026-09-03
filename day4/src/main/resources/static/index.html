@@ -134,12 +134,6 @@
   .fact { display: grid; gap: 2px; }
   .fact-value { font-family: var(--font-mono); font-weight: 600; font-size: 1.0625rem; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
 
-  /* Обзорная полоса: три плитки рядом — единственное место, где температуры стоят борт о борт. */
-  .overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-4); }
-  .overview .stat-tile { border-color: var(--lane); }
-  .overview .stat-tile::before { background-color: var(--lane); }
-  .overview .stat-value { color: var(--lane); }
-
   .bar-row { display: grid; grid-template-columns: 120px minmax(0, 1fr) 56px; gap: var(--space-3); align-items: center; }
   .bar { height: 10px; border-radius: var(--radius-full); background: var(--color-elevated); overflow: hidden; }
   .bar span { display: block; height: 100%; border-radius: var(--radius-full); }
@@ -200,15 +194,7 @@
 
   <main class="page page-body stack stack-lg">
 
-    <header class="stack stack-sm">
-      <h1 class="t-headline-md">Один запрос при разной температуре</h1>
-      <p class="t-body-md t-secondary">
-        Запрос, модель и инструкции одни и те же — меняется ровно один параметр.
-        Ответы показаны друг под другом, каждый помечен цветом своего диапазона:
-        🧊 точность, 🌤 баланс, 🔥 креатив, 🌋 перегрев. Под ними — что в этих ответах
-        можно измерить объективно, а что остаётся вашему глазу.
-      </p>
-    </header>
+    <h1 class="t-headline-md">Один запрос при разной температуре</h1>
 
     <div class="layout">
       <div class="col-main stack stack-lg">
@@ -244,9 +230,8 @@
           </div>
 
           <p class="field-help" style="margin: 0;">
-            Запросов к API: <strong>{{ plannedCalls }}</strong>
-            ({{ knobs.length }} {{ plural(knobs.length, 'температура', 'температуры', 'температур') }}
-            × {{ runs }} {{ plural(runs, 'прогон', 'прогона', 'прогонов') }}). Все идут параллельно.
+            Запросов к API: <strong>{{ knobs.length }}</strong> — по одному на температуру,
+            все идут параллельно.
           </p>
         </section>
 
@@ -266,25 +251,8 @@
         </section>
 
         <template v-if="result">
-          <!-- Единственное место, где температуры стоят борт о борт: сами ответы длинные. -->
-          <div class="overview">
-            <article class="stat-tile" v-for="l in result.lanes" :key="l.temperature" :data-band="l.band">
-              <div class="stat-head">
-                <span class="stat-eyebrow">{{ l.emoji }} temperature {{ fmt(l.temperature) }}</span>
-                <span class="chip chip-lane">{{ l.title }}</span>
-              </div>
-              <p class="stat-value">{{ driftLabel(l) }}</p>
-              <div class="stat-meta">
-                <span class="stat-foot">{{ driftHint(l) }}</span>
-              </div>
-              <div class="thermo">
-                <span class="thermo-mark" :style="{ left: pos(l.temperature) }"></span>
-              </div>
-            </article>
-          </div>
-
           <div class="results">
-            <lane-card v-for="l in result.lanes" :key="l.temperature" :lane="l" :runs="result.runs"></lane-card>
+            <lane-card v-for="l in result.lanes" :key="l.temperature" :lane="l"></lane-card>
           </div>
 
           <section class="card">
@@ -308,7 +276,6 @@
                     <th class="num">Слов</th>
                     <th class="num">Предложений</th>
                     <th class="num">Разнообразие лексики</th>
-                    <th class="num" v-if="result.runs > 1">Разброс внутри</th>
                     <th class="num">Токенов</th>
                     <th class="num">Время</th>
                   </tr>
@@ -324,7 +291,6 @@
                     <td class="num">{{ l.metrics ? l.metrics.words : '—' }}</td>
                     <td class="num">{{ l.metrics ? l.metrics.sentences : '—' }}</td>
                     <td class="num">{{ l.metrics ? pct(l.metrics.lexicalVariety) : '—' }}</td>
-                    <td class="num" v-if="result.runs > 1">{{ l.selfSpread === null ? '—' : pct(l.selfSpread) }}</td>
                     <td class="num">{{ l.completionTokens || '—' }}</td>
                     <td class="num">{{ l.latencyMs ? l.latencyMs + ' ms' : '—' }}</td>
                   </tr>
@@ -335,10 +301,6 @@
             <p class="field-help" style="margin: 0;">
               Прогон целиком — {{ result.wallClockMs }} ms при сумме по запросам {{ totalLatency }} ms:
               все запросы идут параллельно.
-              <template v-if="result.runs === 1">
-                Разброс внутри температуры при одном прогоне не измеряется — поднимите число
-                прогонов в панели справа.
-              </template>
             </p>
 
             <template v-if="result.comparison.distances.length">
@@ -403,62 +365,12 @@
           <button class="btn btn-secondary btn-sm" @click="addKnob" :disabled="knobs.length >= 4">
             Добавить температуру
           </button>
-          <p class="field-help" style="margin: 0;">
-            По заданию — 0, 0.7 и 1.2. Границы диапазонов условные: у провайдера нет ступенек,
-            есть плавный рост разброса.
-          </p>
-        </section>
-
-        <section class="card">
-          <p class="card-eyebrow" style="margin: 0;">Прогонов на температуру</p>
-          <div class="row-between">
-            <input type="range" min="1" max="5" step="1" v-model.number="runs" aria-label="прогонов" style="flex: 1;">
-            <span class="t-mono-sm" style="width: 2ch; text-align: right;">{{ runs }}</span>
-          </div>
-          <p class="field-help" style="margin: 0;" v-if="runs === 1">
-            Один прогон показывает, какой ответ получился. Разнообразие — свойство набора ответов,
-            по одному его не измерить: для этого нужно два и больше.
-          </p>
-          <p class="field-help" style="margin: 0;" v-else>
-            {{ runs }} прогона на каждой температуре: видно, повторяется ответ или каждый раз новый.
-            Стоит это {{ plannedCalls }} запросов к API.
-          </p>
-        </section>
-
-        <section class="card">
-          <p class="card-eyebrow" style="margin: 0;">Финальная строка</p>
-
-          <label class="toggle">
-            <span class="switch">
-              <input type="checkbox" v-model="requireAnswerLine">
-              <span class="switch-track"></span><span class="switch-thumb"></span>
-            </span>
-            <span class="t-body-sm">требовать маркер в конце</span>
-          </label>
-
-          <template v-if="requireAnswerLine">
-            <input class="input t-mono-sm" type="text" maxlength="32" v-model="answerMarker" placeholder="ОТВЕТ:">
-            <p class="field-help">
-              Единственная инструкция, которую приложение добавляет к запросу — одна и та же
-              для всех температур. Нужна на задачах с одним правильным ответом: три финальные
-              строки рядом показывают, где точность поплыла.
-            </p>
-          </template>
-          <p class="field-help" v-else>
-            Запрос уходит голым, без единой системной инструкции. Для творческой задачи это
-            и нужно, но сравнивать «финальный ответ» тогда не с чем.
-          </p>
         </section>
       </aside>
     </div>
 
     <section class="stack stack-md" v-if="bands.length">
-      <div class="stack stack-sm">
-        <h2 class="t-headline-md">Для каких задач какая температура</h2>
-        <p class="t-body-md t-secondary">
-          Справочник приходит с бэкенда вместе с границами диапазонов — интерфейс его не дублирует.
-        </p>
-      </div>
+      <h2 class="t-headline-md">Для каких задач какая температура</h2>
       <div class="guide">
         <article class="card" v-for="b in bands" :key="b.id" :data-band="b.id">
           <div class="row">
@@ -625,7 +537,6 @@ const app = createApp({
       model: 'deepseek-chat',
       models: ['deepseek-chat'],
       knobs: DEFAULT_TEMPERATURES.map(value => ({ value })),
-      runs: 1,
       requireAnswerLine: false,
       answerMarker: 'ОТВЕТ:',
       bands: [],
@@ -634,8 +545,6 @@ const app = createApp({
       result: null,
       error: null,
     });
-
-    const plannedCalls = computed(() => state.knobs.length * state.runs);
 
     const isDefaultKnobs = computed(() =>
       state.knobs.length === DEFAULT_TEMPERATURES.length &&
@@ -653,36 +562,12 @@ const app = createApp({
 
     const fmt = (v) => Number(v).toFixed(1);
     const pct = (v) => Math.round(v * 100) + ' %';
-    // Метка не выезжает за края шкалы: её центр отсчитывается от 6px до «100% − 6px».
-    const pos = (v) => `calc(6px + (100% - 12px) * ${v / 2})`;
 
     function plural(n, one, few, many) {
       const mod10 = n % 10, mod100 = n % 100;
       if (mod10 === 1 && mod100 !== 11) return one;
       if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
       return many;
-    }
-
-    /** Отличие полосы от самой холодной: одна цифра, по которой плитки и сравниваются. */
-    function driftOf(lane) {
-      const base = state.result?.lanes?.[0];
-      if (!base || base.temperature === lane.temperature) return null;
-      const d = state.result.comparison.distances
-        .find(x => x.from === base.temperature && x.to === lane.temperature);
-      return d ? d.distance : null;
-    }
-
-    function driftLabel(lane) {
-      if (lane.failures && !lane.metrics) return '—';
-      const drift = driftOf(lane);
-      return drift === null ? 'эталон' : pct(drift);
-    }
-
-    function driftHint(lane) {
-      const base = state.result?.lanes?.[0];
-      if (!base) return '';
-      if (base.temperature === lane.temperature) return 'с этим ответом сравниваются остальные';
-      return `отличие от ответа при ${fmt(base.temperature)}`;
     }
 
     function gradient(from, to) {
@@ -733,7 +618,6 @@ const app = createApp({
             prompt: state.prompt,
             model: state.model,
             temperatures: state.knobs.map(k => Number(k.value)),
-            runs: state.runs,
             requireAnswerLine: state.requireAnswerLine,
             answerMarker: state.answerMarker,
           }),
@@ -752,15 +636,15 @@ const app = createApp({
     }
 
     return {
-      ...toRefs(state), plannedCalls, isDefaultKnobs, totalLatency,
-      bandOf, fmt, pct, pos, plural, driftLabel, driftHint, gradient, finalOf,
+      ...toRefs(state), isDefaultKnobs, totalLatency,
+      bandOf, fmt, pct, plural, gradient, finalOf,
       applyPreset, addKnob, resetKnobs, run,
     };
   },
 });
 
 app.component('lane-card', {
-  props: { lane: { type: Object, required: true }, runs: { type: Number, required: true } },
+  props: { lane: { type: Object, required: true } },
   setup(props) {
     const wireTab = ref({});
 
@@ -788,7 +672,6 @@ app.component('lane-card', {
           <p class="lane-title t-body-sm"><b>{{ lane.title }}</b></p>
         </div>
         <div class="meta">
-          <span class="chip chip-lane" v-if="runs > 1">{{ runs }} прогона</span>
           <span class="chip" data-tone="neutral" v-if="lane.completionTokens">{{ lane.completionTokens }} токенов</span>
           <span class="chip" data-tone="neutral" v-if="lane.latencyMs">{{ lane.latencyMs }} ms</span>
           <span class="chip" data-tone="danger" v-if="lane.failures">{{ lane.failures }} упало</span>
@@ -805,8 +688,6 @@ app.component('lane-card', {
       </div>
 
       <div class="run" v-for="(r, i) in lane.runs" :key="i">
-        <span class="chip chip-lane" v-if="runs > 1" style="margin-bottom: var(--space-3);">Прогон {{ r.index }}</span>
-
         <p class="t-body-sm" style="color: var(--color-danger); margin: 0;" v-if="r.failure">{{ r.failure }}</p>
 
         <template v-else>
