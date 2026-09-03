@@ -1,0 +1,869 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Advent — температура</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+
+<style>
+  /* Локальный CSS — только раскладка и шкала температуры, которой нет в дизайн-системе. */
+  [v-cloak] { display: none; }
+
+  /* Шкала лёд → огонь. Красный дизайн-системы не занимаем: он остаётся за ошибками,
+     иначе «горячо» и «сломалось» читались бы одинаково. */
+  :root {
+    --temp-cold: #0E6E9C;
+    --temp-warm: #9A5B00;
+    --temp-hot: #C13F17;
+    --temp-scalding: #7B2CBF;
+
+    --temp-cold-soft: rgba(14, 110, 156, 0.10);
+    --temp-warm-soft: rgba(154, 91, 0, 0.10);
+    --temp-hot-soft: rgba(193, 63, 23, 0.10);
+    --temp-scalding-soft: rgba(123, 44, 191, 0.10);
+
+    /* Позиции стопов соответствуют границам диапазонов на шкале 0…2. */
+    --temp-scale: linear-gradient(90deg,
+      #0E6E9C 0%, #1A7F9B 15%, #9A5B00 33%, #C13F17 60%, #C13F17 78%, #7B2CBF 100%);
+  }
+
+  [data-band] { --lane: var(--color-primary); --lane-soft: var(--color-primary-soft); }
+  [data-band="COLD"] { --lane: var(--temp-cold); --lane-soft: var(--temp-cold-soft); }
+  [data-band="WARM"] { --lane: var(--temp-warm); --lane-soft: var(--temp-warm-soft); }
+  [data-band="HOT"] { --lane: var(--temp-hot); --lane-soft: var(--temp-hot-soft); }
+  [data-band="SCALDING"] { --lane: var(--temp-scalding); --lane-soft: var(--temp-scalding-soft); }
+
+  .page {
+    width: 100%;
+    max-width: 1320px;
+    margin-inline: auto;
+    padding-inline: var(--space-6);
+  }
+  .page-body { padding-block: var(--space-8) var(--space-12); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: var(--space-6);
+    align-items: start;
+  }
+  .col-side {
+    position: sticky;
+    top: var(--space-6);
+    max-height: calc(100vh - var(--space-8));
+    overflow-y: auto;
+  }
+  .results { display: grid; gap: var(--space-6); }
+
+  @media (max-width: 1180px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .col-side { position: static; max-height: none; }
+  }
+
+  .toggle { display: inline-flex; align-items: center; gap: var(--space-3); cursor: pointer; }
+  .meta { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .icon { width: 18px; height: 18px; stroke-width: 1.75; }
+
+  /* Ползунок температуры красится в цвет своего диапазона. */
+  input[type="range"] { width: 100%; height: 20px; appearance: none; background: transparent; cursor: pointer; }
+  input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: var(--radius-full); background: var(--color-border-strong); }
+  input[type="range"]::-webkit-slider-thumb { appearance: none; margin-top: -6px; width: 16px; height: 16px;
+    border-radius: var(--radius-full); background: var(--lane, var(--color-primary)); border: 2px solid var(--color-surface); }
+  input[type="range"].on-scale::-webkit-slider-runnable-track { background: var(--temp-scale); }
+
+  /* Шкала 0…2 с меткой: где стоит эта температура среди остальных. */
+  .thermo { position: relative; height: 6px; border-radius: var(--radius-full); background: var(--temp-scale); opacity: 0.85; }
+  .thermo-mark {
+    position: absolute; top: 50%; width: 12px; height: 12px; margin-left: -6px;
+    border-radius: var(--radius-full); background: var(--color-surface);
+    border: 2px solid var(--lane); transform: translateY(-50%);
+  }
+  .thermo-ticks { display: flex; justify-content: space-between; margin-top: var(--space-1); }
+
+  /* Карточка одной температуры: полоса сверху, лёгкая заливка от неё вниз. */
+  .lane {
+    border-color: var(--lane);
+    background:
+      linear-gradient(180deg, var(--lane-soft) 0, transparent 180px),
+      var(--color-surface);
+  }
+  .lane::before {
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
+    background-color: var(--lane); border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+  .lane-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--space-4); align-items: center; }
+  .lane-emoji {
+    font-size: 1.75rem; line-height: 1; width: 52px; height: 52px; flex: none;
+    display: grid; place-items: center; border-radius: var(--radius-md);
+    background: var(--lane-soft); border: 1px solid var(--lane);
+  }
+  .lane-temp { font-family: var(--font-mono); font-size: 1.5rem; font-weight: 600; color: var(--lane); margin: 0; line-height: 1.1; }
+  .lane-title { margin: 0; }
+  .lane-title b { color: var(--color-text-primary); }
+  @media (max-width: 720px) {
+    .lane-head { grid-template-columns: auto minmax(0, 1fr); }
+    .lane-head .meta { grid-column: 1 / -1; }
+  }
+
+  .chip-lane { background: var(--lane-soft); color: var(--lane); border-color: var(--lane); }
+
+  /* Ответ читается как текст, поэтому ограничен по мере строки, а не по ширине карточки. */
+  .answer { word-wrap: break-word; max-width: 78ch; color: var(--color-text-primary); }
+  .answer p { margin: 0 0 var(--space-3); }
+  .answer > :last-child { margin-bottom: 0; }
+  .answer h4 { font-family: var(--font-display); font-size: 1rem; font-weight: 600; margin: var(--space-4) 0 var(--space-2); }
+  .answer ul, .answer ol { margin: 0 0 var(--space-3); padding-left: var(--space-5); }
+  .answer li { margin-bottom: var(--space-1); }
+  .answer strong { font-weight: 600; }
+  .answer em { color: var(--color-text-secondary); }
+  .answer code { font-family: var(--font-mono); font-size: 0.875em; background: var(--color-elevated);
+                 border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 1px 4px; }
+  .answer pre {
+    margin: 0 0 var(--space-3); padding: var(--space-4); overflow: auto;
+    background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-md);
+    font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+  }
+  .run + .run { margin-top: var(--space-5); padding-top: var(--space-5); border-top: 1px solid var(--color-border); }
+
+  .facts { display: flex; flex-wrap: wrap; gap: var(--space-5); }
+  .fact { display: grid; gap: 2px; }
+  .fact-value { font-family: var(--font-mono); font-weight: 600; font-size: 1.0625rem; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+
+  /* Обзорная полоса: три плитки рядом — единственное место, где температуры стоят борт о борт. */
+  .overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-4); }
+  .overview .stat-tile { border-color: var(--lane); }
+  .overview .stat-tile::before { background-color: var(--lane); }
+  .overview .stat-value { color: var(--lane); }
+
+  .bar-row { display: grid; grid-template-columns: 120px minmax(0, 1fr) 56px; gap: var(--space-3); align-items: center; }
+  .bar { height: 10px; border-radius: var(--radius-full); background: var(--color-elevated); overflow: hidden; }
+  .bar span { display: block; height: 100%; border-radius: var(--radius-full); }
+  @media (max-width: 620px) { .bar-row { grid-template-columns: 96px minmax(0, 1fr) 48px; } }
+
+  .cmp { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+  .cmp th, .cmp td { text-align: left; padding: var(--space-3); border-bottom: 1px solid var(--color-border); vertical-align: middle; white-space: nowrap; }
+  .cmp th { font-size: 0.75rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-secondary); }
+  .cmp td.num, .cmp th.num { text-align: right; font-family: var(--font-mono); }
+  .cmp tr:last-child td { border-bottom: none; }
+  .cmp-wrap { overflow-x: auto; }
+
+  .raw, .mono-block {
+    margin: 0;
+    padding: var(--space-4);
+    background-color: var(--color-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .raw { max-height: 320px; white-space: pre; }
+  .headers { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); }
+  .wire-line { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--color-text-secondary); word-break: break-all; }
+
+  /* Строка настройки одной температуры в панели справа. */
+  .knob { display: grid; grid-template-columns: 1fr auto; gap: var(--space-2) var(--space-3); align-items: center; }
+  .knob + .knob { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--color-border); }
+  .knob-head { display: flex; align-items: center; gap: var(--space-2); }
+  .knob-value { font-family: var(--font-mono); font-weight: 600; color: var(--lane); }
+  .knob input[type="range"] { grid-column: 1 / -1; }
+
+  /* Справочник диапазонов: постоянный вывод дня, не зависящий от прогона. */
+  .guide { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-4); }
+  .guide .card { border-color: var(--lane); }
+  .guide-list { margin: 0; padding-left: var(--space-5); }
+  .guide-list li { color: var(--color-text-secondary); font-size: 0.8125rem; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <nav class="nav page">
+    <span class="nav-brand">
+      <span class="nav-brand-mark" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0"/>
+        </svg>
+      </span>
+      AI Advent
+    </span>
+    <span class="chip" data-tone="neutral">Kotlin · Spring Boot · DeepSeek</span>
+  </nav>
+
+  <main class="page page-body stack stack-lg">
+
+    <header class="stack stack-sm">
+      <h1 class="t-headline-md">Один запрос при разной температуре</h1>
+      <p class="t-body-md t-secondary">
+        Запрос, модель и инструкции одни и те же — меняется ровно один параметр.
+        Ответы показаны друг под другом, каждый помечен цветом своего диапазона:
+        🧊 точность, 🌤 баланс, 🔥 креатив, 🌋 перегрев. Под ними — что в этих ответах
+        можно измерить объективно, а что остаётся вашему глазу.
+      </p>
+    </header>
+
+    <div class="layout">
+      <div class="col-main stack stack-lg">
+
+        <section class="card">
+          <div class="field">
+            <label class="field-label" for="prompt">Запрос</label>
+            <textarea
+              id="prompt" class="textarea" rows="4"
+              v-model="prompt" :disabled="busy"
+              placeholder="Например: придумай пять названий для кофейни у метро"
+              @keydown.meta.enter="run" @keydown.ctrl.enter="run"></textarea>
+            <p class="field-help">Cmd / Ctrl + Enter — запустить</p>
+          </div>
+
+          <div class="row" style="flex-wrap: wrap; gap: var(--space-2);">
+            <span class="t-label-sm t-muted" style="margin-right: var(--space-2);">Примеры:</span>
+            <button class="btn btn-secondary btn-sm" v-for="p in presets" :key="p.name"
+                    :title="p.hint" @click="applyPreset(p)">{{ p.name }}</button>
+          </div>
+
+          <div class="row-between" style="flex-wrap: wrap; gap: var(--space-4);">
+            <select class="select" v-model="model" :disabled="busy" style="width: auto;">
+              <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
+            </select>
+
+            <button class="btn btn-primary" @click="run" :disabled="busy || !prompt.trim() || !knobs.length">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0"/>
+              </svg>
+              {{ busy ? 'Гоняю…' : 'Прогнать' }}
+            </button>
+          </div>
+
+          <p class="field-help" style="margin: 0;">
+            Запросов к API: <strong>{{ plannedCalls }}</strong>
+            ({{ knobs.length }} {{ plural(knobs.length, 'температура', 'температуры', 'температур') }}
+            × {{ runs }} {{ plural(runs, 'прогон', 'прогона', 'прогонов') }}). Все идут параллельно.
+          </p>
+        </section>
+
+        <section class="card card-accent" data-accent="danger" v-if="error">
+          <div class="row" style="align-items: flex-start;">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
+                 style="color: var(--color-danger); flex: none; margin-top: 2px;" aria-hidden="true">
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+            </svg>
+            <div class="stack stack-sm">
+              <p class="card-title" style="margin: 0;">{{ error.message }}</p>
+              <ul class="card-body" style="margin: 0; padding-left: var(--space-5);" v-if="error.details.length">
+                <li v-for="(d, i) in error.details" :key="i">{{ d }}</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <template v-if="result">
+          <!-- Единственное место, где температуры стоят борт о борт: сами ответы длинные. -->
+          <div class="overview">
+            <article class="stat-tile" v-for="l in result.lanes" :key="l.temperature" :data-band="l.band">
+              <div class="stat-head">
+                <span class="stat-eyebrow">{{ l.emoji }} temperature {{ fmt(l.temperature) }}</span>
+                <span class="chip chip-lane">{{ l.title }}</span>
+              </div>
+              <p class="stat-value">{{ driftLabel(l) }}</p>
+              <div class="stat-meta">
+                <span class="stat-foot">{{ driftHint(l) }}</span>
+              </div>
+              <div class="thermo">
+                <span class="thermo-mark" :style="{ left: pos(l.temperature) }"></span>
+              </div>
+            </article>
+          </div>
+
+          <div class="results">
+            <lane-card v-for="l in result.lanes" :key="l.temperature" :lane="l" :runs="result.runs"></lane-card>
+          </div>
+
+          <section class="card">
+            <div>
+              <p class="card-eyebrow">Что измерено</p>
+              <p class="card-body" style="margin: 0;">
+                Числа сравниваются только друг с другом внутри этого прогона. Разнообразие лексики —
+                доля неповторяющихся слов в окне 50 слов: длина ответа на неё не влияет, поэтому
+                короткий ответ и длинный сравнимы. «Отличие» — доля пар соседних слов, которые
+                есть в одном ответе и отсутствуют в другом.
+              </p>
+            </div>
+
+            <div class="cmp-wrap">
+              <table class="cmp">
+                <thead>
+                  <tr>
+                    <th>Температура</th>
+                    <th>Диапазон</th>
+                    <th v-if="result.answerMarker">Финальный ответ</th>
+                    <th class="num">Слов</th>
+                    <th class="num">Предложений</th>
+                    <th class="num">Разнообразие лексики</th>
+                    <th class="num" v-if="result.runs > 1">Разброс внутри</th>
+                    <th class="num">Токенов</th>
+                    <th class="num">Время</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="l in result.lanes" :key="l.temperature" :data-band="l.band">
+                    <td><span class="t-mono-sm" style="color: var(--lane); font-weight: 600;">{{ fmt(l.temperature) }}</span></td>
+                    <td>{{ l.emoji }} {{ l.title }}</td>
+                    <td v-if="result.answerMarker">
+                      <span v-if="finalOf(l)" class="t-mono-sm">{{ finalOf(l) }}</span>
+                      <span v-else class="t-body-sm t-muted">не выделен</span>
+                    </td>
+                    <td class="num">{{ l.metrics ? l.metrics.words : '—' }}</td>
+                    <td class="num">{{ l.metrics ? l.metrics.sentences : '—' }}</td>
+                    <td class="num">{{ l.metrics ? pct(l.metrics.lexicalVariety) : '—' }}</td>
+                    <td class="num" v-if="result.runs > 1">{{ l.selfSpread === null ? '—' : pct(l.selfSpread) }}</td>
+                    <td class="num">{{ l.completionTokens || '—' }}</td>
+                    <td class="num">{{ l.latencyMs ? l.latencyMs + ' ms' : '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p class="field-help" style="margin: 0;">
+              Прогон целиком — {{ result.wallClockMs }} ms при сумме по запросам {{ totalLatency }} ms:
+              все запросы идут параллельно.
+              <template v-if="result.runs === 1">
+                Разброс внутри температуры при одном прогоне не измеряется — поднимите число
+                прогонов в панели справа.
+              </template>
+            </p>
+
+            <template v-if="result.comparison.distances.length">
+              <div class="divider"></div>
+              <p class="t-label-sm t-muted" style="margin: 0;">Насколько ответы отличаются друг от друга</p>
+              <div class="stack stack-sm">
+                <div class="bar-row" v-for="(d, i) in result.comparison.distances" :key="i">
+                  <span class="t-mono-sm">{{ fmt(d.from) }} ↔ {{ fmt(d.to) }}</span>
+                  <span class="bar">
+                    <span :style="{ width: pct(d.distance), background: gradient(d.from, d.to) }"></span>
+                  </span>
+                  <span class="t-mono-sm" style="text-align: right;">{{ pct(d.distance) }}</span>
+                </div>
+              </div>
+              <p class="field-help" style="margin: 0;">
+                0 % — ответы дословно совпали, 100 % — ни одной общей пары слов. Два верных ответа,
+                сказанных разными словами, дадут большое число: это мера различия текста, а не смысла.
+              </p>
+            </template>
+
+            <template v-if="result.comparison.answerGroups.length">
+              <div class="divider"></div>
+              <p class="t-label-sm t-muted" style="margin: 0;">Финальные строки</p>
+              <div class="stack stack-sm">
+                <div v-for="(g, i) in result.comparison.answerGroups" :key="i" class="row" style="flex-wrap: wrap;">
+                  <span class="chip" :data-tone="i === 0 && result.comparison.answerGroups.length === 1 ? 'success' : 'neutral'">× {{ g.count }}</span>
+                  <span class="t-mono-sm">{{ g.answer }}</span>
+                  <span class="t-body-sm t-muted">— при {{ g.temperatures.map(fmt).join(', ') }}</span>
+                </div>
+              </div>
+              <p class="field-help" style="margin: 0;">
+                Одна группа — ответ не изменился ни на одной температуре. Несколько — где-то поплыл.
+                Совпадение ещё не означает правильность: верен ответ или нет, решаете вы.
+              </p>
+            </template>
+          </section>
+        </template>
+
+      </div>
+
+      <aside class="col-side stack stack-lg">
+        <section class="card">
+          <div class="row-between">
+            <p class="card-eyebrow" style="margin: 0;">Температуры</p>
+            <button class="btn btn-tertiary btn-sm" @click="resetKnobs" v-if="!isDefaultKnobs">Сбросить</button>
+          </div>
+
+          <div>
+            <div class="knob" v-for="(k, i) in knobs" :key="i" :data-band="bandOf(k.value).id">
+              <span class="knob-head">
+                <span>{{ bandOf(k.value).emoji }}</span>
+                <span class="knob-value">{{ fmt(k.value) }}</span>
+                <span class="t-body-sm t-muted">{{ bandOf(k.value).title }}</span>
+              </span>
+              <button class="btn btn-tertiary btn-sm" @click="knobs.splice(i, 1)" :disabled="knobs.length < 2"
+                      title="Убрать температуру">✕</button>
+              <input type="range" class="on-scale" min="0" max="2" step="0.1"
+                     v-model.number="k.value" :aria-label="'temperature ' + fmt(k.value)">
+            </div>
+          </div>
+
+          <button class="btn btn-secondary btn-sm" @click="addKnob" :disabled="knobs.length >= 4">
+            Добавить температуру
+          </button>
+          <p class="field-help" style="margin: 0;">
+            По заданию — 0, 0.7 и 1.2. Границы диапазонов условные: у провайдера нет ступенек,
+            есть плавный рост разброса.
+          </p>
+        </section>
+
+        <section class="card">
+          <p class="card-eyebrow" style="margin: 0;">Прогонов на температуру</p>
+          <div class="row-between">
+            <input type="range" min="1" max="5" step="1" v-model.number="runs" aria-label="прогонов" style="flex: 1;">
+            <span class="t-mono-sm" style="width: 2ch; text-align: right;">{{ runs }}</span>
+          </div>
+          <p class="field-help" style="margin: 0;" v-if="runs === 1">
+            Один прогон показывает, какой ответ получился. Разнообразие — свойство набора ответов,
+            по одному его не измерить: для этого нужно два и больше.
+          </p>
+          <p class="field-help" style="margin: 0;" v-else>
+            {{ runs }} прогона на каждой температуре: видно, повторяется ответ или каждый раз новый.
+            Стоит это {{ plannedCalls }} запросов к API.
+          </p>
+        </section>
+
+        <section class="card">
+          <p class="card-eyebrow" style="margin: 0;">Финальная строка</p>
+
+          <label class="toggle">
+            <span class="switch">
+              <input type="checkbox" v-model="requireAnswerLine">
+              <span class="switch-track"></span><span class="switch-thumb"></span>
+            </span>
+            <span class="t-body-sm">требовать маркер в конце</span>
+          </label>
+
+          <template v-if="requireAnswerLine">
+            <input class="input t-mono-sm" type="text" maxlength="32" v-model="answerMarker" placeholder="ОТВЕТ:">
+            <p class="field-help">
+              Единственная инструкция, которую приложение добавляет к запросу — одна и та же
+              для всех температур. Нужна на задачах с одним правильным ответом: три финальные
+              строки рядом показывают, где точность поплыла.
+            </p>
+          </template>
+          <p class="field-help" v-else>
+            Запрос уходит голым, без единой системной инструкции. Для творческой задачи это
+            и нужно, но сравнивать «финальный ответ» тогда не с чем.
+          </p>
+        </section>
+      </aside>
+    </div>
+
+    <section class="stack stack-md" v-if="bands.length">
+      <div class="stack stack-sm">
+        <h2 class="t-headline-md">Для каких задач какая температура</h2>
+        <p class="t-body-md t-secondary">
+          Справочник приходит с бэкенда вместе с границами диапазонов — интерфейс его не дублирует.
+        </p>
+      </div>
+      <div class="guide">
+        <article class="card" v-for="b in bands" :key="b.id" :data-band="b.id">
+          <div class="row">
+            <span class="lane-emoji">{{ b.emoji }}</span>
+            <div>
+              <p class="card-title" style="color: var(--lane);">{{ b.title }}</p>
+              <p class="t-mono-sm t-muted">{{ b.range }}</p>
+            </div>
+          </div>
+          <p class="card-body" style="margin: 0;">{{ b.summary }}</p>
+          <div>
+            <p class="t-label-sm t-muted" style="margin-bottom: var(--space-2);">Подходит</p>
+            <ul class="guide-list">
+              <li v-for="(t, i) in b.bestFor" :key="i">{{ t }}</li>
+            </ul>
+          </div>
+          <div>
+            <p class="t-label-sm t-muted" style="margin-bottom: var(--space-2);">Не подходит</p>
+            <ul class="guide-list">
+              <li v-for="(t, i) in b.avoidFor" :key="i">{{ t }}</li>
+            </ul>
+          </div>
+        </article>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, reactive, computed, toRefs, ref } = Vue;
+
+const DEFAULT_TEMPERATURES = [0, 0.7, 1.2];
+
+/**
+ * Модель отвечает markdown-ом, и показывать его сырым — со звёздочками вместо жирного —
+ * значит мешать сравнивать тексты глазами. Разметка минимальная: заголовки, списки,
+ * жирный, курсив, код.
+ *
+ * Текст экранируется ЦЕЛИКОМ до того, как в него добавляется хоть один тег,
+ * поэтому ответ модели не может принести на страницу свою разметку или скрипт.
+ */
+const ESCAPE = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const escapeHtml = (text) => text.replace(/[&<>"']/g, c => ESCAPE[c]);
+
+function inlineMd(text) {
+  return text
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[\s(«"'])\*([^*\n]+)\*/gm, '$1<em>$2</em>')
+    .replace(/(^|[\s(«"'])_([^_\n]+)_/gm, '$1<em>$2</em>');
+}
+
+function blocksMd(text) {
+  const out = [];
+  let list = null;
+  let para = [];
+
+  const flushList = () => {
+    if (!list) return;
+    // Нумерация продолжается с того числа, которое поставила модель: показать «1.»
+    // там, где в ответе «3.», значит переписать ответ за неё.
+    const start = list.tag === 'ol' && list.start !== 1 ? ` start="${list.start}"` : '';
+    out.push(`<${list.tag}${start}>${list.items.map(i => `<li>${i}</li>`).join('')}</${list.tag}>`);
+    list = null;
+  };
+  const flushPara = () => {
+    if (!para.length) return;
+    out.push(`<p>${para.join('<br>')}</p>`);
+    para = [];
+  };
+
+  for (const raw of text.split('\n')) {
+    const line = raw.trimEnd();
+    if (!line.trim()) { flushList(); flushPara(); continue; }
+
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) { flushList(); flushPara(); out.push(`<h4>${inlineMd(heading[1])}</h4>`); continue; }
+
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
+    const numbered = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+    if (bullet || numbered) {
+      flushPara();
+      const tag = bullet ? 'ul' : 'ol';
+      const start = numbered ? Number(numbered[1]) : 1;
+      if (!list || list.tag !== tag) { flushList(); list = { tag, start, items: [] }; }
+      list.items.push(inlineMd(bullet ? bullet[1] : numbered[2]));
+      continue;
+    }
+
+    flushList();
+    para.push(inlineMd(line));
+  }
+
+  flushList();
+  flushPara();
+  return out.join('');
+}
+
+/** Блоки в ``` остаются как есть: JSON и код разметке не подлежат. */
+function markdown(text) {
+  return escapeHtml(text ?? '')
+    .split('```')
+    .map((part, i) => i % 2
+      ? `<pre>${part.replace(/^[\w-]*\r?\n/, '').replace(/\s+$/, '')}</pre>`
+      : blocksMd(part))
+    .join('');
+}
+
+/** Цвет диапазона. Значения — те же, что в CSS: там они нужны заливке, здесь — градиентам. */
+const BAND_COLORS = {
+  COLD: '#0E6E9C',
+  WARM: '#9A5B00',
+  HOT: '#C13F17',
+  SCALDING: '#7B2CBF',
+};
+
+// Примеры подобраны так, чтобы разница между температурами была видна в обе стороны:
+// на фактических запросах горячее вредит, на творческих — холодное.
+const PRESETS = [
+  {
+    name: 'Названия для кофейни',
+    hint: 'Творческая задача: при 0 варианты предсказуемые, при 1.2 неожиданные.',
+    prompt: 'Придумай пять названий для маленькой кофейни у метро и к каждому — короткое объяснение идеи.',
+    marker: false,
+  },
+  {
+    name: 'Начало рассказа',
+    hint: 'Художественный текст: разброс между температурами максимальный.',
+    prompt: 'Напиши первый абзац рассказа, который начинается с того, что в квартире зазвонил телефон, отключённый три года назад.',
+    marker: false,
+  },
+  {
+    name: 'Арифметика',
+    hint: 'Задача с одним правильным ответом: смотрите на финальную строку.',
+    prompt: 'Товар стоил 2400 рублей. Сначала его подорожали на 15%, потом уценили на 20%. Сколько он стоит теперь?',
+    marker: true,
+  },
+  {
+    name: 'Извлечь данные',
+    hint: 'Машиночитаемый формат: горячее означает съехавшую структуру.',
+    prompt: 'Из текста «Иванов Пётр, +7 916 111-22-33, заказ №4471 от 3 сентября, две пиццы и кола, оплата картой» собери JSON с полями name, phone, orderId, date, items, payment. Верни только JSON.',
+    marker: false,
+  },
+  {
+    name: 'Письмо клиенту',
+    hint: 'Деловой текст: 0 звучит сухо, 1.2 — слишком вольно.',
+    prompt: 'Напиши письмо клиенту: его заказ задерживается на три дня по вине склада. Извинись, объясни причину и предложи компенсацию.',
+    marker: false,
+  },
+  {
+    name: 'Столица наоборот',
+    hint: 'Проверка фактов: на горячем модель начинает придумывать.',
+    prompt: 'Назови три страны, столица которых не является крупнейшим городом страны, и укажи для каждой крупнейший город.',
+    marker: true,
+  },
+];
+
+const app = createApp({
+  setup() {
+    const state = reactive({
+      prompt: PRESETS[0].prompt,
+      model: 'deepseek-chat',
+      models: ['deepseek-chat'],
+      knobs: DEFAULT_TEMPERATURES.map(value => ({ value })),
+      runs: 1,
+      requireAnswerLine: false,
+      answerMarker: 'ОТВЕТ:',
+      bands: [],
+      presets: PRESETS,
+      busy: false,
+      result: null,
+      error: null,
+    });
+
+    const plannedCalls = computed(() => state.knobs.length * state.runs);
+
+    const isDefaultKnobs = computed(() =>
+      state.knobs.length === DEFAULT_TEMPERATURES.length &&
+      state.knobs.every((k, i) => k.value === DEFAULT_TEMPERATURES[i]));
+
+    const totalLatency = computed(() =>
+      (state.result?.lanes ?? []).reduce((sum, l) => sum + l.runs.reduce((s, r) => s + r.latencyMs, 0), 0));
+
+    /** Полоса определяется по границам, пришедшим с бэкенда, — пороги здесь не дублируются. */
+    function bandOf(value) {
+      return state.bands.find(b => value <= b.upperBound) ?? state.bands[state.bands.length - 1] ?? {
+        id: 'COLD', emoji: '🌡', title: '', range: '',
+      };
+    }
+
+    const fmt = (v) => Number(v).toFixed(1);
+    const pct = (v) => Math.round(v * 100) + ' %';
+    // Метка не выезжает за края шкалы: её центр отсчитывается от 6px до «100% − 6px».
+    const pos = (v) => `calc(6px + (100% - 12px) * ${v / 2})`;
+
+    function plural(n, one, few, many) {
+      const mod10 = n % 10, mod100 = n % 100;
+      if (mod10 === 1 && mod100 !== 11) return one;
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+      return many;
+    }
+
+    /** Отличие полосы от самой холодной: одна цифра, по которой плитки и сравниваются. */
+    function driftOf(lane) {
+      const base = state.result?.lanes?.[0];
+      if (!base || base.temperature === lane.temperature) return null;
+      const d = state.result.comparison.distances
+        .find(x => x.from === base.temperature && x.to === lane.temperature);
+      return d ? d.distance : null;
+    }
+
+    function driftLabel(lane) {
+      if (lane.failures && !lane.metrics) return '—';
+      const drift = driftOf(lane);
+      return drift === null ? 'эталон' : pct(drift);
+    }
+
+    function driftHint(lane) {
+      const base = state.result?.lanes?.[0];
+      if (!base) return '';
+      if (base.temperature === lane.temperature) return 'с этим ответом сравниваются остальные';
+      return `отличие от ответа при ${fmt(base.temperature)}`;
+    }
+
+    function gradient(from, to) {
+      const a = BAND_COLORS[bandOf(from).id] ?? 'var(--color-primary)';
+      const b = BAND_COLORS[bandOf(to).id] ?? 'var(--color-primary)';
+      return `linear-gradient(90deg, ${a}, ${b})`;
+    }
+
+    /** Финальная строка полосы: при нескольких прогонах — первая, где она нашлась. */
+    function finalOf(lane) {
+      return lane.runs.map(r => r.finalAnswer).find(Boolean) ?? null;
+    }
+
+    function applyPreset(preset) {
+      state.prompt = preset.prompt;
+      state.requireAnswerLine = preset.marker;
+    }
+
+    function addKnob() {
+      if (state.knobs.length >= 4) return;
+      const last = state.knobs[state.knobs.length - 1]?.value ?? 0;
+      state.knobs.push({ value: Math.min(2, Math.round((last + 0.5) * 10) / 10) });
+    }
+
+    function resetKnobs() {
+      state.knobs = DEFAULT_TEMPERATURES.map(value => ({ value }));
+    }
+
+    fetch('/api/models')
+      .then(r => r.json())
+      .then(d => { state.models = d.models; state.model = d.defaultModel; })
+      .catch(() => {});
+
+    fetch('/api/bands')
+      .then(r => r.json())
+      .then(d => { state.bands = d; })
+      .catch(() => {});
+
+    async function run() {
+      if (state.busy || !state.prompt.trim() || !state.knobs.length) return;
+      state.busy = true;
+      state.error = null;
+      try {
+        const res = await fetch('/api/compare', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: state.prompt,
+            model: state.model,
+            temperatures: state.knobs.map(k => Number(k.value)),
+            runs: state.runs,
+            requireAnswerLine: state.requireAnswerLine,
+            answerMarker: state.answerMarker,
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          state.error = { message: data?.error ?? ('Ошибка ' + res.status), details: data?.details ?? [] };
+          return;
+        }
+        state.result = data;
+      } catch (e) {
+        state.error = { message: 'Сервер недоступен: ' + e.message, details: [] };
+      } finally {
+        state.busy = false;
+      }
+    }
+
+    return {
+      ...toRefs(state), plannedCalls, isDefaultKnobs, totalLatency,
+      bandOf, fmt, pct, pos, plural, driftLabel, driftHint, gradient, finalOf,
+      applyPreset, addKnob, resetKnobs, run,
+    };
+  },
+});
+
+app.component('lane-card', {
+  props: { lane: { type: Object, required: true }, runs: { type: Number, required: true } },
+  setup(props) {
+    const wireTab = ref({});
+
+    function body(run, which) {
+      const ex = run.exchange;
+      if (!ex) return '';
+      const raw = which === 'request' ? ex.requestBody : ex.responseBody;
+      if (!raw) return 'Ответа не было.';
+      try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
+    }
+
+    const fmt = (v) => Number(v).toFixed(1);
+    const pct = (v) => Math.round(v * 100) + ' %';
+    const pos = (v) => `calc(6px + (100% - 12px) * ${v / 2})`;
+    const tabOf = (i) => wireTab.value[i] || 'response';
+
+    return { wireTab, body, fmt, pct, pos, tabOf, markdown };
+  },
+  template: `
+    <section class="card lane" :data-band="lane.band">
+      <div class="lane-head">
+        <span class="lane-emoji">{{ lane.emoji }}</span>
+        <div>
+          <p class="lane-temp">temperature = {{ fmt(lane.temperature) }}</p>
+          <p class="lane-title t-body-sm"><b>{{ lane.title }}</b></p>
+        </div>
+        <div class="meta">
+          <span class="chip chip-lane" v-if="runs > 1">{{ runs }} прогона</span>
+          <span class="chip" data-tone="neutral" v-if="lane.completionTokens">{{ lane.completionTokens }} токенов</span>
+          <span class="chip" data-tone="neutral" v-if="lane.latencyMs">{{ lane.latencyMs }} ms</span>
+          <span class="chip" data-tone="danger" v-if="lane.failures">{{ lane.failures }} упало</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="thermo"><span class="thermo-mark" :style="{ left: pos(lane.temperature) }"></span></div>
+        <div class="thermo-ticks">
+          <span class="t-mono-sm t-muted">0</span>
+          <span class="t-mono-sm t-muted">1</span>
+          <span class="t-mono-sm t-muted">2</span>
+        </div>
+      </div>
+
+      <div class="run" v-for="(r, i) in lane.runs" :key="i">
+        <span class="chip chip-lane" v-if="runs > 1" style="margin-bottom: var(--space-3);">Прогон {{ r.index }}</span>
+
+        <p class="t-body-sm" style="color: var(--color-danger); margin: 0;" v-if="r.failure">{{ r.failure }}</p>
+
+        <template v-else>
+          <div class="answer t-body-md" v-html="markdown(r.answer)"></div>
+
+          <div class="facts" style="margin-top: var(--space-4);" v-if="r.metrics">
+            <span class="fact">
+              <span class="fact-value">{{ r.metrics.words }}</span>
+              <span class="t-body-sm t-muted">слов</span>
+            </span>
+            <span class="fact">
+              <span class="fact-value">{{ r.metrics.sentences }}</span>
+              <span class="t-body-sm t-muted">предложений</span>
+            </span>
+            <span class="fact">
+              <span class="fact-value">{{ r.metrics.avgSentenceWords }}</span>
+              <span class="t-body-sm t-muted">слов в предложении</span>
+            </span>
+            <span class="fact">
+              <span class="fact-value">{{ pct(r.metrics.lexicalVariety) }}</span>
+              <span class="t-body-sm t-muted">разнообразие лексики</span>
+            </span>
+            <span class="fact" v-if="r.finalAnswer">
+              <span class="fact-value">{{ r.finalAnswer }}</span>
+              <span class="t-body-sm t-muted">финальная строка</span>
+            </span>
+          </div>
+
+          <details v-if="r.exchange" style="margin-top: var(--space-4);">
+            <summary class="t-label-sm t-muted" style="cursor: pointer;">Реальный вызов API</summary>
+            <div class="stack stack-sm" style="margin-top: var(--space-3);">
+              <div class="tabs" role="tablist">
+                <button class="tab" :class="{ 'is-active': tabOf(i) === 'request' }"
+                        @click="wireTab[i] = 'request'">HTTP-запрос</button>
+                <button class="tab" :class="{ 'is-active': tabOf(i) === 'response' }"
+                        @click="wireTab[i] = 'response'">HTTP-ответ</button>
+              </div>
+              <p class="wire-line" v-if="tabOf(i) === 'request'">
+                {{ r.exchange.method }} {{ r.exchange.url }}
+              </p>
+              <p class="wire-line" v-else>HTTP {{ r.exchange.status ?? '—' }} ← {{ r.exchange.url }}</p>
+              <div class="headers" v-if="tabOf(i) === 'request'">
+                <template v-for="(v, k) in r.exchange.requestHeaders" :key="k">
+                  <span class="t-mono-sm t-muted">{{ k }}:</span>
+                  <span class="t-mono-sm">{{ v }}</span>
+                </template>
+              </div>
+              <pre class="raw">{{ body(r, tabOf(i)) }}</pre>
+            </div>
+          </details>
+        </template>
+      </div>
+    </section>
+  `,
+});
+
+app.mount('#app');
+</script>
+</body>
+</html>

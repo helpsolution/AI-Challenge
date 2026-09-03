@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: day4
+  # Локально ключ удобно держать в .env рядом с проектом (файл в .gitignore).
+  # На сервере тот же ключ приходит обычной переменной окружения.
+  config:
+    import: optional:file:.env[.properties]
+
+server:
+  port: ${PORT:8083}
+
+llm:
+  deepseek:
+    base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+    api-key: ${DEEPSEEK_API_KEY:}
+    default-model: ${DEEPSEEK_MODEL:deepseek-chat}
+    # Только deepseek-chat: deepseek-reasoner температуру игнорирует,
+    # и день 4 на нём превратился бы в три одинаковых запроса.
+    allowed-models:
+      - deepseek-chat
+    connect-timeout: 10s
+    read-timeout: 180s
+
+logging:
+  level:
+    advent.day4: INFO
