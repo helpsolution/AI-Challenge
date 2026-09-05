@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Advent — версии моделей</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+
+<style>
+  /* Локальный CSS — только раскладка и шкала уровней, которой нет в дизайн-системе. */
+  [v-cloak] { display: none; }
+
+  /* Шкала уровней: бирюза → индиго → фиолетовый. Красный дизайн-системы не занимаем,
+     он остаётся за ошибками — иначе «сильная модель» и «сломалось» читались бы одинаково. */
+  :root {
+    --tier-weak: #0B6C7A;
+    --tier-medium: #4B57E8;
+    --tier-strong: #7B2CBF;
+
+    --tier-weak-soft: rgba(11, 108, 122, 0.10);
+    --tier-medium-soft: rgba(75, 87, 232, 0.10);
+    --tier-strong-soft: rgba(123, 44, 191, 0.10);
+  }
+
+  [data-tier] { --tier: var(--color-primary); --tier-soft: var(--color-primary-soft); }
+  [data-tier="WEAK"] { --tier: var(--tier-weak); --tier-soft: var(--tier-weak-soft); }
+  [data-tier="MEDIUM"] { --tier: var(--tier-medium); --tier-soft: var(--tier-medium-soft); }
+  [data-tier="STRONG"] { --tier: var(--tier-strong); --tier-soft: var(--tier-strong-soft); }
+
+  .page {
+    width: 100%;
+    max-width: 1320px;
+    margin-inline: auto;
+    padding-inline: var(--space-6);
+  }
+  .page-body { padding-block: var(--space-8) var(--space-12); }
+
+  .icon { width: 18px; height: 18px; stroke-width: 1.75; }
+  .meta { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+  .toggle { display: inline-flex; align-items: center; gap: var(--space-3); cursor: pointer; }
+
+  /* Три колонки — по одной на уровень. Сравнение читается только когда модели рядом. */
+  .tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
+  @media (max-width: 960px) { .tiers { grid-template-columns: minmax(0, 1fr); } }
+
+  /* Карточка уровня: полоса своего цвета сверху, лёгкая заливка от неё вниз. */
+  .tier {
+    position: relative;
+    border-color: var(--tier);
+    background:
+      linear-gradient(180deg, var(--tier-soft) 0, transparent 200px),
+      var(--color-surface);
+  }
+  .tier::before {
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
+    background-color: var(--tier); border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+  .tier-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); align-items: center; }
+  .tier-emoji {
+    font-size: 1.5rem; line-height: 1; width: 46px; height: 46px; flex: none;
+    display: grid; place-items: center; border-radius: var(--radius-md);
+    background: var(--tier-soft); border: 1px solid var(--tier);
+  }
+  .tier-name { margin: 0; font-weight: 600; color: var(--tier); font-size: 0.75rem;
+               letter-spacing: 0.08em; text-transform: uppercase; }
+  .tier-model { margin: 0; font-family: var(--font-display); font-size: 1.0625rem; font-weight: 600;
+                color: var(--color-text-primary); line-height: 1.25; }
+
+  .chip-tier { background: var(--tier-soft); color: var(--tier); border-color: var(--tier); }
+
+  /* Ответ читается как текст, поэтому ограничен по мере строки, а не по ширине карточки. */
+  .answer { word-wrap: break-word; max-width: 78ch; color: var(--color-text-primary); }
+  .answer p { margin: 0 0 var(--space-3); }
+  .answer > :last-child { margin-bottom: 0; }
+  .answer h4 { font-family: var(--font-display); font-size: 1rem; font-weight: 600; margin: var(--space-4) 0 var(--space-2); }
+  .answer ul, .answer ol { margin: 0 0 var(--space-3); padding-left: var(--space-5); }
+  .answer li { margin-bottom: var(--space-1); }
+  .answer strong { font-weight: 600; }
+  .answer em { color: var(--color-text-secondary); }
+  .answer code { font-family: var(--font-mono); font-size: 0.875em; background: var(--color-elevated);
+                 border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 1px 4px; }
+  .answer pre {
+    margin: 0 0 var(--space-3); padding: var(--space-4); overflow: auto;
+    background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-md);
+    font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+  }
+
+  .facts { display: flex; flex-wrap: wrap; gap: var(--space-5); }
+  .fact { display: grid; gap: 2px; }
+  .fact-value { font-family: var(--font-mono); font-weight: 600; font-size: 1.0625rem;
+                color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+
+  .cmp { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+  .cmp th, .cmp td { text-align: left; padding: var(--space-3); border-bottom: 1px solid var(--color-border); vertical-align: middle; white-space: nowrap; }
+  .cmp th { font-size: 0.75rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-secondary); }
+  .cmp td.num, .cmp th.num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .cmp tr:last-child td { border-bottom: none; }
+  .cmp-wrap { overflow-x: auto; }
+  .cmp .best { color: var(--color-success); font-weight: 600; }
+
+  .raw {
+    margin: 0; padding: var(--space-4);
+    background-color: var(--color-elevated); border: 1px solid var(--color-border);
+    border-radius: var(--radius-md); overflow: auto; max-height: 320px;
+    font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.6; white-space: pre;
+  }
+  .headers { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); }
+  .wire-line { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--color-text-secondary); word-break: break-all; }
+
+  .links { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+  .links a { font-size: 0.8125rem; }
+
+  .guide { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
+  @media (max-width: 960px) { .guide { grid-template-columns: minmax(0, 1fr); } }
+  .guide-list { margin: 0; padding-left: var(--space-5); }
+  .guide-list li { color: var(--color-text-secondary); font-size: 0.8125rem; line-height: 1.6; }
+
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <nav class="nav page">
+    <span class="nav-brand">
+      <span class="nav-brand-mark" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3v18"/><path d="M3 7.5h4"/><path d="M17 7.5h4"/><path d="M3 16.5h7"/><path d="M14 16.5h7"/>
+        </svg>
+      </span>
+      AI Advent
+    </span>
+    <span class="chip" data-tone="neutral">Kotlin · Spring Boot · OpenRouter</span>
+  </nav>
+
+  <main class="page page-body stack stack-lg">
+
+    <section class="card">
+      <div class="field">
+        <label class="field-label" for="prompt">Запрос</label>
+        <textarea
+          id="prompt" class="textarea" rows="4"
+          v-model="prompt" :disabled="busy"
+          placeholder="Например: бита и мяч вместе стоят 1100 рублей…"
+          @keydown.meta.enter="run" @keydown.ctrl.enter="run"></textarea>
+        <p class="field-help">Cmd / Ctrl + Enter — запустить</p>
+      </div>
+
+      <div class="row" style="flex-wrap: wrap; gap: var(--space-2);">
+        <span class="t-label-sm t-muted" style="margin-right: var(--space-2);">Задачи:</span>
+        <button class="btn btn-secondary btn-sm" v-for="p in presets" :key="p.id"
+                :title="p.hint" @click="prompt = p.prompt">{{ p.title }}</button>
+      </div>
+      <p class="field-help" style="margin: 0;" v-if="hintOf(prompt)">{{ hintOf(prompt) }}</p>
+
+      <div class="divider"></div>
+
+      <div class="tiers">
+        <div class="stack stack-sm" v-for="t in tiers" :key="t.id" :data-tier="t.id">
+          <span class="row" style="gap: var(--space-2);">
+            <span>{{ t.emoji }}</span>
+            <span class="tier-name">{{ t.title }}</span>
+          </span>
+          <select class="select" v-model="selection[t.id]" :disabled="busy">
+            <option v-for="m in modelsOf(t.id)" :key="m.id" :value="m.id">{{ m.title }}</option>
+          </select>
+          <p class="t-body-sm t-muted" style="margin: 0;">
+            {{ cardOf(t.id).scale || '—' }}
+          </p>
+          <p class="t-mono-sm t-muted" style="margin: 0;" v-if="cardOf(t.id).promptPricePerMillion !== null">
+            ${{ cardOf(t.id).promptPricePerMillion }} → ${{ cardOf(t.id).completionPricePerMillion }} за 1M токенов
+          </p>
+        </div>
+      </div>
+
+      <p class="field-help" style="margin: 0;" v-if="catalog.pricingUnavailable">
+        Прайс провайдера сейчас недоступен, цены в карточках пустые. На замеры это не влияет:
+        стоимость каждого запроса приходит в самом ответе.
+      </p>
+
+      <div class="row-between" style="flex-wrap: wrap; gap: var(--space-4);">
+        <p class="field-help" style="margin: 0;">
+          Запросов к API: <strong>3</strong> — по одному на уровень, все идут параллельно.
+        </p>
+        <button class="btn btn-primary" @click="run" :disabled="busy || !prompt.trim()">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3v18"/><path d="M3 7.5h4"/><path d="M17 7.5h4"/><path d="M3 16.5h7"/><path d="M14 16.5h7"/>
+          </svg>
+          {{ busy ? 'Гоняю…' : 'Сравнить' }}
+        </button>
+      </div>
+    </section>
+
+    <section class="card card-accent" data-accent="danger" v-if="error">
+      <div class="row" style="align-items: flex-start;">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
+             style="color: var(--color-danger); flex: none; margin-top: 2px;" aria-hidden="true">
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+        </svg>
+        <div class="stack stack-sm">
+          <p class="card-title" style="margin: 0;">{{ error.message }}</p>
+          <ul class="card-body" style="margin: 0; padding-left: var(--space-5);" v-if="error.details.length">
+            <li v-for="(d, i) in error.details" :key="i">{{ d }}</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <template v-if="result">
+
+      <!-- Все замеры одной таблицей: её удобно перенести в отчёт. -->
+      <section class="card">
+        <p class="card-eyebrow">Замеры</p>
+        <div class="cmp-wrap">
+          <table class="cmp">
+            <thead>
+              <tr>
+                <th>Уровень</th>
+                <th>Модель</th>
+                <th class="num">Время</th>
+                <th class="num">Токен/с</th>
+                <th class="num">Вход</th>
+                <th class="num">Выход</th>
+                <th class="num">Из них рассуждение</th>
+                <th class="num">Стоимость</th>
+                <th class="num">За 1000 запросов</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="c in result.contenders" :key="c.tier" :data-tier="c.tier">
+                <td><span style="color: var(--tier); font-weight: 600;">{{ c.tierEmoji }} {{ c.tierTitle }}</span></td>
+                <td>{{ c.model.title }}</td>
+                <template v-if="c.failure">
+                  <td colspan="7" style="color: var(--color-danger); white-space: normal;">{{ c.failure }}</td>
+                </template>
+                <template v-else>
+                  <td class="num" :class="{ best: isBest('latency', c) }">{{ (c.latencyMs / 1000).toFixed(1) }} с</td>
+                  <td class="num">{{ c.tokensPerSecond ?? '—' }}</td>
+                  <td class="num">{{ c.usage ? c.usage.promptTokens : '—' }}</td>
+                  <td class="num">{{ c.usage ? c.usage.completionTokens : '—' }}</td>
+                  <td class="num">{{ c.usage && c.usage.reasoningTokens ? c.usage.reasoningTokens : '—' }}</td>
+                  <td class="num" :class="{ best: isBest('cost', c) }">{{ c.cost ? money(c.cost.amount) : '—' }}</td>
+                  <td class="num">{{ c.cost ? money(c.cost.per1000Requests) : '—' }}</td>
+                </template>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="field-help" style="margin: 0;">
+          Прогон целиком — {{ (result.wallClockMs / 1000).toFixed(1) }} с при сумме по запросам
+          {{ (totalLatency / 1000).toFixed(1) }} с: три модели опрашиваются параллельно.
+          Сравнение обошлось в {{ money(result.totalCost) }} при {{ totalTokens }} токенах.
+          <template v-if="result.costEstimated">
+            Часть сумм помечена как оценка — провайдер не прислал списанную цифру, и она посчитана по прайсу.
+          </template>
+        </p>
+      </section>
+
+      <!-- Сами ответы. -->
+      <div class="stack stack-lg">
+        <contender-card v-for="c in result.contenders" :key="c.tier" :contender="c"></contender-card>
+      </div>
+    </template>
+
+    <section class="stack stack-md" v-if="tiers.length">
+      <h2 class="t-headline-md" style="margin: 0;">Три уровня и что от них ждать</h2>
+      <div class="guide">
+        <article class="card" v-for="t in tiers" :key="t.id" :data-tier="t.id" style="border-color: var(--tier);">
+          <div class="tier-head">
+            <span class="tier-emoji">{{ t.emoji }}</span>
+            <div>
+              <p class="tier-name">{{ t.title }}</p>
+              <p class="tier-model">{{ cardOf(t.id).title || '—' }}</p>
+            </div>
+          </div>
+          <p class="card-body" style="margin: 0;">{{ t.summary }}</p>
+          <div>
+            <p class="t-label-sm t-muted" style="margin-bottom: var(--space-2);">Подходит</p>
+            <ul class="guide-list"><li v-for="(x, i) in t.goodFor" :key="i">{{ x }}</li></ul>
+          </div>
+          <div>
+            <p class="t-label-sm t-muted" style="margin-bottom: var(--space-2);">Не подходит</p>
+            <ul class="guide-list"><li v-for="(x, i) in t.weakAt" :key="i">{{ x }}</li></ul>
+          </div>
+          <div class="links" v-if="cardOf(t.id).openRouterUrl">
+            <a :href="cardOf(t.id).openRouterUrl" target="_blank" rel="noopener">Карточка у провайдера ↗</a>
+            <a :href="cardOf(t.id).huggingFaceUrl" target="_blank" rel="noopener"
+               v-if="cardOf(t.id).huggingFaceUrl">Веса на HuggingFace ↗</a>
+          </div>
+        </article>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, reactive, computed, toRefs, ref } = Vue;
+
+/**
+ * Модель отвечает markdown-ом, и показывать его сырым — со звёздочками вместо жирного —
+ * значит мешать сравнивать тексты глазами. Разметка минимальная: заголовки, списки,
+ * жирный, курсив, код.
+ *
+ * Текст экранируется ЦЕЛИКОМ до того, как в него добавляется хоть один тег,
+ * поэтому ответ модели не может принести на страницу свою разметку или скрипт.
+ */
+const ESCAPE = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const escapeHtml = (text) => text.replace(/[&<>"']/g, c => ESCAPE[c]);
+
+function inlineMd(text) {
+  return text
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[\s(«"'])\*([^*\n]+)\*/gm, '$1<em>$2</em>')
+    .replace(/(^|[\s(«"'])_([^_\n]+)_/gm, '$1<em>$2</em>');
+}
+
+function blocksMd(text) {
+  const out = [];
+  let list = null;
+  let para = [];
+
+  const flushList = () => {
+    if (!list) return;
+    // Нумерация продолжается с того числа, которое поставила модель: показать «1.»
+    // там, где в ответе «3.», значит переписать ответ за неё.
+    const start = list.tag === 'ol' && list.start !== 1 ? ` start="${list.start}"` : '';
+    out.push(`<${list.tag}${start}>${list.items.map(i => `<li>${i}</li>`).join('')}</${list.tag}>`);
+    list = null;
+  };
+  const flushPara = () => {
+    if (!para.length) return;
+    out.push(`<p>${para.join('<br>')}</p>`);
+    para = [];
+  };
+
+  for (const raw of text.split('\n')) {
+    const line = raw.trimEnd();
+    if (!line.trim()) { flushList(); flushPara(); continue; }
+
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) { flushList(); flushPara(); out.push(`<h4>${inlineMd(heading[1])}</h4>`); continue; }
+
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
+    const numbered = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+    if (bullet || numbered) {
+      flushPara();
+      const tag = bullet ? 'ul' : 'ol';
+      const start = numbered ? Number(numbered[1]) : 1;
+      if (!list || list.tag !== tag) { flushList(); list = { tag, start, items: [] }; }
+      list.items.push(inlineMd(bullet ? bullet[1] : numbered[2]));
+      continue;
+    }
+
+    flushList();
+    para.push(inlineMd(line));
+  }
+
+  flushList();
+  flushPara();
+  return out.join('');
+}
+
+/** Блоки в ``` остаются как есть: JSON и код разметке не подлежат. */
+function markdown(text) {
+  return escapeHtml(text ?? '')
+    .split('```')
+    .map((part, i) => i % 2
+      ? `<pre>${part.replace(/^[\w-]*\r?\n/, '').replace(/\s+$/, '')}</pre>`
+      : blocksMd(part))
+    .join('');
+}
+
+/**
+ * Суммы в этом дне отличаются на пять порядков: доли цента у слабой модели и заметные
+ * центы у сильной. Фиксированные два знака после запятой превратили бы первую в «$0.00».
+ * Правило то же, что на бэкенде: столько знаков, чтобы осталось две значащие цифры.
+ */
+function money(amount) {
+  if (!amount || amount <= 0) return '$0';
+  const decimals = amount >= 1 ? 2 : amount >= 0.01 ? 4 : amount >= 0.0001 ? 6 : 8;
+  return '$' + amount.toFixed(decimals).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+const TIER_FALLBACK = { id: '', title: '', scale: '', openRouterUrl: '', huggingFaceUrl: null,
+                        promptPricePerMillion: null, completionPricePerMillion: null };
+
+const app = createApp({
+  setup() {
+    const state = reactive({
+      prompt: '',
+      presets: [],
+      catalog: { tiers: [], models: [], pricingUnavailable: false },
+      selection: {},
+      busy: false,
+      result: null,
+      error: null,
+    });
+
+    const tiers = computed(() => state.catalog.tiers);
+    const ok = computed(() => (state.result?.contenders ?? []).filter(c => !c.failure));
+    const totalLatency = computed(() => ok.value.reduce((sum, c) => sum + c.latencyMs, 0));
+    const totalTokens = computed(() => ok.value.reduce((sum, c) => sum + (c.usage?.totalTokens ?? 0), 0));
+
+    const modelsOf = (tier) => state.catalog.models.filter(m => m.tier === tier);
+    const cardOf = (tier) => state.catalog.models.find(m => m.id === state.selection[tier]) ?? TIER_FALLBACK;
+    const hintOf = (text) => state.presets.find(p => p.prompt === text)?.hint ?? null;
+
+    /** Лучший в колонке. И по времени, и по деньгам лучше меньшее. */
+    function isBest(key, contender) {
+      const pick = { latency: c => c.latencyMs, cost: c => c.cost?.amount }[key];
+      const values = ok.value.map(pick).filter(v => v !== null && v !== undefined && v > 0);
+      if (values.length < 2) return false;
+      return pick(contender) === Math.min(...values);
+    }
+
+    Promise.all([
+      fetch('/api/catalog').then(r => r.json()),
+      fetch('/api/presets').then(r => r.json()),
+    ]).then(([catalog, presets]) => {
+      state.catalog = catalog;
+      state.presets = presets;
+      catalog.tiers.forEach(t => {
+        const models = catalog.models.filter(m => m.tier === t.id);
+        state.selection[t.id] = (models.find(m => m.default) ?? models[0])?.id ?? '';
+      });
+      if (!state.prompt && presets.length) state.prompt = presets[0].prompt;
+    }).catch(() => {
+      state.error = { message: 'Не удалось загрузить каталог моделей.', details: [] };
+    });
+
+    async function run() {
+      if (state.busy || !state.prompt.trim()) return;
+      state.busy = true;
+      state.error = null;
+      try {
+        const res = await fetch('/api/compare', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: state.prompt, models: { ...state.selection } }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          state.error = { message: data?.error ?? ('Ошибка ' + res.status), details: data?.details ?? [] };
+          return;
+        }
+        state.result = data;
+      } catch (e) {
+        state.error = { message: 'Сервер недоступен: ' + e.message, details: [] };
+      } finally {
+        state.busy = false;
+      }
+    }
+
+    return {
+      ...toRefs(state), tiers, ok, totalLatency, totalTokens,
+      modelsOf, cardOf, hintOf, isBest, money, run,
+    };
+  },
+});
+
+app.component('contender-card', {
+  props: { contender: { type: Object, required: true } },
+  setup(props) {
+    const wireTab = ref('response');
+
+    /** Обрыв у reasoning-модели почти всегда означает, что лимит съело размышление. */
+    const reasoningShare = computed(() => {
+      const usage = props.contender.usage;
+      if (!usage?.reasoningTokens) return '';
+      return `: ${usage.reasoningTokens} из ${usage.completionTokens} выходных токенов ушло на размышление`;
+    });
+
+    function body(which) {
+      const ex = props.contender.exchange;
+      if (!ex) return '';
+      const raw = which === 'request' ? ex.requestBody : ex.responseBody;
+      if (!raw) return 'Ответа не было.';
+      try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
+    }
+
+    return { wireTab, reasoningShare, body, markdown, money };
+  },
+  template: `
+    <section class="card tier" :data-tier="contender.tier">
+      <div class="row-between" style="flex-wrap: wrap; gap: var(--space-4);">
+        <div class="tier-head">
+          <span class="tier-emoji">{{ contender.tierEmoji }}</span>
+          <div>
+            <p class="tier-name">{{ contender.tierTitle }}</p>
+            <p class="tier-model">{{ contender.model.title }}</p>
+            <p class="t-mono-sm t-muted" style="margin: 0;">{{ contender.model.id }}</p>
+          </div>
+        </div>
+        <div class="meta">
+          <span class="chip chip-tier" v-if="contender.latencyMs">{{ (contender.latencyMs / 1000).toFixed(1) }} с</span>
+          <span class="chip chip-tier" v-if="contender.usage">{{ contender.usage.completionTokens }} токенов</span>
+          <span class="chip chip-tier" v-if="contender.cost">{{ money(contender.cost.amount) }}</span>
+        </div>
+      </div>
+
+      <p class="t-body-sm" style="color: var(--color-danger); margin: 0;" v-if="contender.failure">
+        {{ contender.failure }}
+      </p>
+
+      <template v-else>
+        <p class="truncated t-body-sm" v-if="contender.finishReason === 'length'">
+          Ответ упёрся в потолок в 2000 токенов и оборван на полуслове{{ reasoningShare }}.
+          Незаконченность здесь — не свойство модели, а следствие лимита: судить по такому
+          ответу о её уровне нельзя.
+        </p>
+
+        <div class="answer t-body-md" v-html="markdown(contender.answer)"></div>
+
+        <div class="facts" v-if="contender.usage">
+          <span class="fact">
+            <span class="fact-value">{{ contender.tokensPerSecond ?? '—' }}</span>
+            <span class="t-body-sm t-muted">токенов в секунду</span>
+          </span>
+          <span class="fact" v-if="contender.latencyRatio">
+            <span class="fact-value">{{ contender.latencyRatio }}×</span>
+            <span class="t-body-sm t-muted">к самой быстрой</span>
+          </span>
+          <span class="fact" v-if="contender.costRatio">
+            <span class="fact-value">{{ contender.costRatio }}×</span>
+            <span class="t-body-sm t-muted">к самой дешёвой</span>
+          </span>
+          <span class="fact" v-if="contender.metrics">
+            <span class="fact-value">{{ contender.metrics.words }}</span>
+            <span class="t-body-sm t-muted">слов в ответе</span>
+          </span>
+          <span class="fact" v-if="contender.usage.reasoningTokens">
+            <span class="fact-value">{{ contender.usage.reasoningTokens }}</span>
+            <span class="t-body-sm t-muted">токенов на скрытое рассуждение</span>
+          </span>
+        </div>
+
+        <div class="links">
+          <a :href="contender.model.openRouterUrl" target="_blank" rel="noopener">Карточка модели ↗</a>
+          <a :href="contender.model.huggingFaceUrl" target="_blank" rel="noopener"
+             v-if="contender.model.huggingFaceUrl">Веса на HuggingFace ↗</a>
+          <span class="t-body-sm t-muted" v-if="contender.provider">Обслужил запрос: {{ contender.provider }}</span>
+          <span class="t-body-sm t-muted" v-if="contender.finishReason">finish_reason: {{ contender.finishReason }}</span>
+        </div>
+
+        <details v-if="contender.reasoning">
+          <summary class="t-label-sm t-muted" style="cursor: pointer;">Цепочка рассуждения</summary>
+          <div class="answer t-body-sm" style="margin-top: var(--space-3);" v-html="markdown(contender.reasoning)"></div>
+        </details>
+
+        <details v-if="contender.exchange">
+          <summary class="t-label-sm t-muted" style="cursor: pointer;">Реальный вызов API</summary>
+          <div class="stack stack-sm" style="margin-top: var(--space-3);">
+            <div class="tabs" role="tablist">
+              <button class="tab" :class="{ 'is-active': wireTab === 'request' }"
+                      @click="wireTab = 'request'">HTTP-запрос</button>
+              <button class="tab" :class="{ 'is-active': wireTab === 'response' }"
+                      @click="wireTab = 'response'">HTTP-ответ</button>
+            </div>
+            <p class="wire-line" v-if="wireTab === 'request'">
+              {{ contender.exchange.method }} {{ contender.exchange.url }}
+            </p>
+            <p class="wire-line" v-else>HTTP {{ contender.exchange.status ?? '—' }} ← {{ contender.exchange.url }}</p>
+            <div class="headers" v-if="wireTab === 'request'">
+              <template v-for="(v, k) in contender.exchange.requestHeaders" :key="k">
+                <span class="t-mono-sm t-muted">{{ k }}:</span>
+                <span class="t-mono-sm">{{ v }}</span>
+              </template>
+            </div>
+            <pre class="raw">{{ body(wireTab) }}</pre>
+          </div>
+        </details>
+      </template>
+    </section>
+  `,
+});
+
+app.mount('#app');
+</script>
+</body>
+</html>

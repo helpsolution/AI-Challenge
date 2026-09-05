@@ -1,0 +1,87 @@
+spring:
+  application:
+    name: day5
+  # Локально ключ удобно держать в .env рядом с проектом (файл в .gitignore).
+  # На сервере тот же ключ приходит обычной переменной окружения.
+  config:
+    import: optional:file:.env[.properties]
+
+server:
+  port: ${PORT:8084}
+
+llm:
+  openrouter:
+    base-url: ${OPENROUTER_BASE_URL:https://openrouter.ai/api/v1}
+    api-key: ${OPENROUTER_API_KEY:}
+    referer: ${OPENROUTER_REFERER:https://github.com/helpsolution/AI-Challenge}
+    title: AI Advent Challenge day 5
+
+    connect-timeout: 10s
+    # Сильные модели рассуждают перед ответом, и минуты им иногда не хватает.
+    read-timeout: 180s
+
+    # Каталог участников. Цены, размер контекста и ссылки на веса сюда не пишутся —
+    # они подтягиваются с /api/v1/models: прайс меняется несколько раз в год,
+    # а день 5 меряет в том числе деньги.
+    catalog:
+      # Слабые — «начало списка»: единицы миллиардов параметров, открытые веса.
+      - id: meta-llama/llama-3.2-1b-instruct
+        tier: WEAK
+        title: Llama 3.2 1B
+        scale: 1B параметров, открытые веса
+        default: true
+      - id: meta-llama/llama-3.2-3b-instruct
+        tier: WEAK
+        title: Llama 3.2 3B
+        scale: 3B параметров, открытые веса
+      - id: google/gemma-3-4b-it
+        tier: WEAK
+        title: Gemma 3 4B
+        scale: 4B параметров, открытые веса
+      - id: mistralai/ministral-3b-2512
+        tier: WEAK
+        title: Ministral 3B
+        scale: 3B параметров
+
+      # Средние — рабочие лошадки. DeepSeek стоит по умолчанию: на нём построены дни 1–4,
+      # и сравнение начинается с уже знакомой точки отсчёта.
+      - id: deepseek/deepseek-chat
+        tier: MEDIUM
+        title: DeepSeek V3
+        scale: открытая MoE, 671B всего / 37B активных
+        default: true
+      - id: openai/gpt-4o-mini
+        tier: MEDIUM
+        title: GPT-4o mini
+        scale: закрытая, размер не раскрыт
+      - id: openai/gpt-5-mini
+        tier: MEDIUM
+        title: GPT-5 mini
+        scale: закрытая, размер не раскрыт
+      - id: google/gemini-2.5-flash
+        tier: MEDIUM
+        title: Gemini 2.5 Flash
+        scale: закрытая, размер не раскрыт
+
+      # Сильные — флагманы. Между ними и слабым уровнем разница в цене около сотни раз.
+      - id: anthropic/claude-sonnet-5
+        tier: STRONG
+        title: Claude Sonnet 5
+        scale: закрытая, размер не раскрыт
+        default: true
+      - id: openai/gpt-5.4
+        tier: STRONG
+        title: GPT-5.4
+        scale: закрытая, размер не раскрыт
+      - id: google/gemini-3.1-pro-preview
+        tier: STRONG
+        title: Gemini 3.1 Pro
+        scale: закрытая, размер не раскрыт
+      - id: x-ai/grok-4.6
+        tier: STRONG
+        title: Grok 4.6
+        scale: закрытая, размер не раскрыт
+
+logging:
+  level:
+    advent.day5: INFO
