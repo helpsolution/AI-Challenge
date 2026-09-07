@@ -12,16 +12,16 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Агент — отдельная сущность с состоянием, а не обёртка над вызовом API.
  *
- * У него есть имя и характер ([settings]), текущее занятие ([state]), настроение ([mood])
- * и журнал жизни. Каждый вопрос проходит через [ask]: агент собирает промпт из своей
- * персоны и вопроса, идёт к модели, отдаёт ответ по мере генерации. Каждый шаг фиксируется
- * и выдаётся слушателю событием — так снаружи видно, что именно агент делает, а не только
- * что он в итоге сказал.
- *
- * Памяти диалога у агента нет намеренно: каждый вопрос независим. Это ровно то, что просит
- * задание дня, а контекст между ходами — тема следующих дней.
+ * У него есть имя и характер ([settings]), текущее занятие ([state]), настроение ([mood]),
+ * счётчики и журнал жизни. Каждый вопрос проходит через [ask]: агент собирает промпт
+ * из своей персоны и вопроса, идёт к модели, разбирает ответ и возвращает [TurnReport] —
+ * протокол хода, по которому снаружи видно, что именно он делал, а не только что сказал.
  *
  * Класс не знает ни про Spring, ни про HTTP: единственная зависимость — [LlmClient].
+ *
+ * Чего у агента намеренно нет: памяти диалога (каждый вопрос независим) и инструментов.
+ * И то и другое — темы следующих дней; здесь важно, что логика запроса и ответа целиком
+ * лежит внутри этого класса.
  */
 class Agent(
     initialSettings: AgentSettings,
@@ -57,8 +57,6 @@ class Agent(
 
     val isBusy: Boolean get() = busy.get()
 
-    fun mood(): Mood = synchronized(lock) { moodLocked() }
-
     fun snapshot(): AgentSnapshot = synchronized(lock) {
         val current = settings
         AgentSnapshot(
@@ -89,17 +87,22 @@ class Agent(
     }
 
     /**
-     * Один ход. Блокирует агента на время ответа: параллельный вопрос получит
-     * [AgentBusyException]. События уходят [listener]-у синхронно, по мере появления.
+     * Один ход: вопрос внутрь, протокол наружу. Сбой модели не бросается исключением,
+     * а становится частью протокола: ход состоялся, просто закончился неудачей — иначе
+     * счётчики и журнал не сходились бы с тем, что видел пользователь.
+     *
+     * Агент отвечает по одному вопросу за раз: параллельный получит [AgentBusyException].
      */
-    fun ask(input: String, listener: (AgentEvent) -> Unit = {}): TurnReport {
+    fun ask(input: String): TurnReport {
         val text = input.trim()
         require(text.isNotEmpty()) { "Пустой вопрос — отвечать нечего" }
         if (!busy.compareAndSet(false, true)) throw AgentBusyException(settings.name)
 
         try {
-            return Turn(text, listener).run()
+            state = AgentState.THINKING
+            return Turn(text).run()
         } finally {
+            state = AgentState.IDLE
             busy.set(false)
         }
     }
@@ -115,7 +118,6 @@ class Agent(
         val activity = lastActivityAt
         return when {
             state == AgentState.THINKING -> Mood.CURIOUS
-            state == AgentState.ANSWERING -> Mood.CHATTY
             last == null || activity == null -> Mood.SLEEPY
             Duration.between(activity, clock.instant()) > SLEEPY_AFTER -> Mood.SLEEPY
             last.failed -> Mood.GRUMPY
@@ -124,8 +126,8 @@ class Agent(
         }
     }
 
-    /** Состояние одного хода. Настройки фиксируются на входе: смена персоны посреди ответа его не ломает. */
-    private inner class Turn(private val text: String, private val listener: (AgentEvent) -> Unit) {
+    /** Состояние одного хода. Настройки фиксируются на входе: смена персоны его не ломает. */
+    private inner class Turn(private val text: String) {
         private val current = settings
         private val startedAt = clock.instant()
         private val startedNanos = System.nanoTime()
@@ -135,20 +137,12 @@ class Agent(
         private fun elapsedMs() = (System.nanoTime() - startedNanos) / 1_000_000
 
         private fun step(title: String, detail: String? = null) {
-            val step = TurnStep(elapsedMs(), title, detail)
-            steps += step
-            listener(AgentEvent.Step(step))
-        }
-
-        private fun transition(next: AgentState) {
-            state = next
-            listener(AgentEvent.StateChanged(next, mood()))
+            steps += TurnStep(elapsedMs(), title, detail)
         }
 
         fun run(): TurnReport {
             var promptMessages = 0
             try {
-                transition(AgentState.THINKING)
                 step("Получил вопрос", "${text.length} символов")
 
                 val messages = buildList {
@@ -167,37 +161,21 @@ class Agent(
 
                 step("Отправил модели", "${current.model}, temperature ${current.temperature}, до ${current.maxTokens} токенов")
 
-                var firstTokenMs: Long? = null
-                var reasoningStarted = false
-                val request = ChatCompletionRequest(
-                    model = current.model,
-                    messages = messages,
-                    temperature = current.temperature,
-                    maxTokens = current.maxTokens,
+                val completion = llm.complete(
+                    ChatCompletionRequest(
+                        model = current.model,
+                        messages = messages,
+                        temperature = current.temperature,
+                        maxTokens = current.maxTokens,
+                    ),
                 )
-                val completion = llm.stream(request) { delta ->
-                    delta.reasoning?.takeIf { it.isNotEmpty() }?.let {
-                        if (!reasoningStarted) {
-                            reasoningStarted = true
-                            step("Модель рассуждает", "скрытый ход мысли, в ответ не попадает")
-                        }
-                        listener(AgentEvent.Reasoning(it))
-                    }
-                    delta.content?.takeIf { it.isNotEmpty() }?.let {
-                        if (firstTokenMs == null) {
-                            firstTokenMs = elapsedMs()
-                            step("Первый токен", "через $firstTokenMs мс")
-                            transition(AgentState.ANSWERING)
-                        }
-                        listener(AgentEvent.Token(it))
-                    }
-                }
 
                 val latencyMs = elapsedMs()
                 val usage = completion.usage?.toTurnUsage()
                 step(
-                    "Ответ получен",
+                    "Получил ответ",
                     listOfNotNull(
+                        "${completion.content.length} символов",
                         usage?.let {
                             "${it.promptTokens} токенов на входе, ${it.completionTokens} на выходе" +
                                 if (it.reasoningTokens > 0) " (из них ${it.reasoningTokens} на рассуждение)" else ""
@@ -215,7 +193,6 @@ class Agent(
                     reasoning = completion.reasoning,
                     model = completion.model ?: current.model,
                     promptMessages = promptMessages,
-                    firstTokenMs = firstTokenMs,
                     latencyMs = latencyMs,
                     usage = usage,
                     finishReason = completion.finishReason,
@@ -231,8 +208,6 @@ class Agent(
                     lastActivityAt = clock.instant()
                 }
                 record(LogTone.SUCCESS, "Ход $number: ${usage?.totalTokens?.let { "$it токенов, " } ?: ""}$latencyMs мс")
-                transition(AgentState.IDLE)
-                listener(AgentEvent.Completed(report))
                 return report
             } catch (e: Exception) {
                 val message = e.message ?: "Неизвестная ошибка"
@@ -245,7 +220,6 @@ class Agent(
                     reasoning = null,
                     model = current.model,
                     promptMessages = promptMessages,
-                    firstTokenMs = null,
                     latencyMs = elapsedMs(),
                     usage = null,
                     finishReason = null,
@@ -258,8 +232,6 @@ class Agent(
                     lastActivityAt = clock.instant()
                 }
                 record(LogTone.DANGER, "Ход $number не удался: $message")
-                transition(AgentState.IDLE)
-                listener(AgentEvent.Failed(report))
                 return report
             }
         }

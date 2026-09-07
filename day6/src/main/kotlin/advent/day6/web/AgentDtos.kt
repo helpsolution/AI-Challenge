@@ -2,9 +2,7 @@ package advent.day6.web
 
 import advent.day6.agent.AgentSettings
 import advent.day6.agent.AgentSnapshot
-import advent.day6.agent.AgentState
 import advent.day6.agent.Avatar
-import advent.day6.agent.Mood
 import advent.day6.agent.TurnReport
 
 data class ChatRequest(val text: String)
@@ -28,14 +26,11 @@ data class SettingsRequest(
     )
 }
 
-/** Тело SSE-события `state`. */
-data class StateView(val state: AgentState, val mood: Mood)
-
-/** Тело SSE-событий `token` и `reasoning`. */
-data class TextChunk(val text: String)
-
-/** Тело завершающих SSE-событий `done` и `error`: протокол хода и свежий снимок агента. */
-data class TurnOutcome(val turn: TurnReport, val agent: AgentSnapshot)
+/** Ответ на вопрос: протокол хода и свежий снимок агента после него. */
+data class TurnOutcome(
+    val turn: TurnReport,
+    val agent: AgentSnapshot,
+)
 
 data class ErrorResponse(
     val error: String,

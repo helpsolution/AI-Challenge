@@ -5,8 +5,8 @@ import com.fasterxml.jackson.annotation.JsonProperty
 
 /**
  * Тело запроса к /chat/completions. DeepSeek следует OpenAI-совместимой схеме.
- * Ответ всегда запрашивается потоком, а `stream_options.include_usage` заставляет провайдера
- * прислать расход токенов последним чанком — без этого в стриме его просто нет.
+ * Параметры генерации nullable: null означает «не отправлять поле», то есть оставить
+ * значение по умолчанию на стороне провайдера.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 data class ChatCompletionRequest(
@@ -14,12 +14,6 @@ data class ChatCompletionRequest(
     val messages: List<ApiMessage>,
     val temperature: Double? = null,
     @JsonProperty("max_tokens") val maxTokens: Int? = null,
-    val stream: Boolean = true,
-    @JsonProperty("stream_options") val streamOptions: StreamOptions? = StreamOptions(),
-)
-
-data class StreamOptions(
-    @JsonProperty("include_usage") val includeUsage: Boolean = true,
 )
 
 data class ApiMessage(
@@ -27,21 +21,20 @@ data class ApiMessage(
     val content: String,
 )
 
-/** Один чанк server-sent events: дельта текста и, в самом конце, расход токенов. */
-data class StreamChunk(
+data class ChatCompletionResponse(
     val id: String? = null,
     val model: String? = null,
-    val choices: List<StreamChoice> = emptyList(),
+    val choices: List<Choice> = emptyList(),
     val usage: Usage? = null,
 )
 
-data class StreamChoice(
+data class Choice(
     val index: Int = 0,
-    val delta: Delta? = null,
+    val message: ResponseMessage? = null,
     @JsonProperty("finish_reason") val finishReason: String? = null,
 )
 
-data class Delta(
+data class ResponseMessage(
     val role: String? = null,
     val content: String? = null,
     /** Скрытое рассуждение deepseek-reasoner. У deepseek-chat поля нет. */
