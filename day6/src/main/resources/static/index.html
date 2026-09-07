@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Advent — первый агент</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  /* Локальный CSS — только раскладка, чат, таймлайн хода и аватар: этого в дизайн-системе нет. */
+  [v-cloak] { display: none; }
+
+  .page { width: 100%; max-width: 1320px; margin-inline: auto; padding-inline: var(--space-6); }
+  .page-body { padding-block: var(--space-6) var(--space-10); }
+  .icon { width: 18px; height: 18px; stroke-width: 1.75; }
+  .nav { gap: var(--space-3); }
+  @media (max-width: 720px) {
+    .page { padding-inline: var(--space-4); }
+    .nav-stack { display: none; }
+  }
+  .badge-dot[data-tone="neutral"] { background-color: var(--color-text-muted); }
+
+  /* Диалог слева, агент справа. Колонка агента фиксирована: он и есть герой дня. */
+  .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: var(--space-6); align-items: start; }
+  @media (max-width: 1040px) { .workspace { grid-template-columns: minmax(0, 1fr); } }
+
+  /* ---- Чат: шапка, лента, поле ввода — на всю доступную высоту ---- */
+  .chat { padding: 0; gap: 0; height: calc(100vh - 64px - var(--space-6) - var(--space-10)); min-height: 560px; }
+  .chat-head { padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-border); }
+  .thread { flex: 1; overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+  .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: end;
+              padding: var(--space-4) var(--space-5); border-top: 1px solid var(--color-border); }
+  .composer .textarea { height: auto; min-height: 44px; max-height: 180px; resize: none; padding-block: 10px; }
+
+  .empty { margin: auto; text-align: center; max-width: 34ch; color: var(--color-text-muted); }
+  .empty p { margin: var(--space-2) 0 0; }
+
+  .msg { max-width: 82%; display: grid; gap: var(--space-1); }
+  .msg[data-role="USER"] { align-self: flex-end; }
+  .msg[data-role="ASSISTANT"], .msg[data-role="SYSTEM"] { align-self: flex-start; }
+  .msg-meta { display: flex; gap: var(--space-2); align-items: baseline; font-size: 0.75rem; color: var(--color-text-muted); }
+  .msg[data-role="USER"] .msg-meta { justify-content: flex-end; }
+  .msg-meta .who { font-weight: 500; color: var(--color-text-secondary); }
+  .bubble { padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg); border: 1px solid var(--color-border);
+            font-size: 0.9375rem; line-height: 1.55; color: var(--color-text-primary); word-wrap: break-word; }
+  .msg[data-role="USER"] .bubble { background: var(--color-elevated); border-color: var(--color-border-strong);
+                                   white-space: pre-wrap; border-bottom-right-radius: var(--radius-sm); }
+  .msg[data-role="ASSISTANT"] .bubble { background: var(--color-surface); border-bottom-left-radius: var(--radius-sm); }
+  .msg[data-role="SYSTEM"] .bubble { background: var(--color-surface); border-color: var(--color-danger); color: var(--color-danger);
+                                     font-size: 0.8125rem; display: flex; gap: var(--space-2); align-items: flex-start; }
+  .msg[data-role="SYSTEM"] .icon { flex: none; margin-top: 2px; }
+
+  /* Ответ модели — markdown в минимальном объёме. */
+  .bubble p { margin: 0 0 var(--space-3); }
+  .bubble > :last-child { margin-bottom: 0; }
+  .bubble h4 { font-family: var(--font-display); font-size: 1rem; font-weight: 600; margin: var(--space-3) 0 var(--space-2); }
+  .bubble ul, .bubble ol { margin: 0 0 var(--space-3); padding-left: var(--space-5); }
+  .bubble hr { height: 1px; border: 0; background: var(--color-border); margin: var(--space-4) 0; }
+  .bubble li { margin-bottom: var(--space-1); }
+  .bubble strong { font-weight: 600; }
+  .bubble em { color: var(--color-text-secondary); }
+  .bubble code { font-family: var(--font-mono); font-size: 0.875em; background: var(--color-elevated);
+                 border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 1px 4px; }
+  .bubble pre { margin: 0 0 var(--space-3); padding: var(--space-3); overflow: auto; background: var(--color-elevated);
+                border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: var(--font-mono);
+                font-size: 0.8125rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+
+  .typing { display: inline-flex; gap: 4px; align-items: center; height: 1.4em; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--color-text-muted); animation: typing 1.2s infinite ease-in-out; }
+  .typing i:nth-child(2) { animation-delay: .2s; }
+  .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes typing { 0%, 80%, 100% { transform: translateY(0); opacity: .4; } 40% { transform: translateY(-4px); opacity: 1; } }
+  .caret { display: inline-block; width: 2px; height: 1em; background: var(--color-primary); vertical-align: -2px; margin-left: 2px;
+           animation: caret 1s steps(1) infinite; }
+  @keyframes caret { 50% { opacity: 0; } }
+
+  /* ---- Панель агента ---- */
+  .brain { position: sticky; top: var(--space-6); }
+  @media (max-width: 1040px) {
+    .brain { position: static; }
+    .chat { height: auto; min-height: 0; }
+    .thread { max-height: 60vh; }
+  }
+  .avatar-wrap { display: grid; place-items: center; padding-top: var(--space-2); }
+  .state-pill { display: inline-flex; align-items: center; gap: var(--space-2); font-size: 0.75rem; font-weight: 500;
+                letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-secondary); white-space: nowrap; }
+  .state-pill[data-state="THINKING"] .badge-dot, .state-pill[data-state="ANSWERING"] .badge-dot { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.6); opacity: .5; } }
+  .meta { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .mood-line { margin: 0; min-height: 2.6em; }
+  .agent-name { margin: 0; }
+
+  .timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+  .timeline li { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: var(--space-3); align-items: baseline; }
+  .timeline .when { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-text-muted); text-align: right;
+                    font-variant-numeric: tabular-nums; }
+  .timeline .what { font-size: 0.8125rem; color: var(--color-text-primary); }
+  .timeline .how { font-size: 0.75rem; color: var(--color-text-muted); line-height: 1.45; }
+  .timeline li.is-live .what::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%;
+                                      background: var(--color-primary); animation: pulse 1.2s infinite; vertical-align: middle; }
+  .timeline li.is-fail .what { color: var(--color-danger); }
+
+  .reasoning summary { cursor: pointer; font-size: 0.8125rem; color: var(--color-text-secondary); }
+  .reasoning pre { margin: var(--space-2) 0 0; padding: var(--space-3); max-height: 180px; overflow: auto; white-space: pre-wrap;
+                   font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.5; background: var(--color-elevated);
+                   border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text-secondary); }
+
+  .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+  .fact { display: grid; gap: 2px; }
+  .fact-label { font-size: 0.6875rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted); font-weight: 500; }
+  .fact-value { font-family: var(--font-mono); font-weight: 600; font-size: 1.0625rem; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+  .fact-value small { font-size: 0.75rem; font-weight: 500; color: var(--color-text-muted); }
+  @media (max-width: 520px) { .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  .log { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); max-height: 220px; overflow-y: auto; }
+  .log li { display: grid; grid-template-columns: 40px 8px minmax(0, 1fr); gap: var(--space-2); align-items: baseline; font-size: 0.8125rem;
+            color: var(--color-text-secondary); line-height: 1.45; }
+  .log .badge-dot { position: relative; top: -1px; }
+  .log .when { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-text-muted); }
+
+  /* ---- Панель настроек: единственное, что здесь парит, поэтому единственное с тенью ---- */
+  .drawer-backdrop { position: fixed; inset: 0; background: rgba(15, 18, 25, 0.32); display: flex; justify-content: flex-end; z-index: 40; }
+  .drawer { width: min(560px, 100%); height: 100%; overflow-y: auto; border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+            border-right: 0; box-shadow: var(--shadow-lg); background: var(--color-surface); }
+  .drawer-enter-active, .drawer-leave-active { transition: opacity .2s ease; }
+  .drawer-enter-active .drawer, .drawer-leave-active .drawer { transition: transform .24s cubic-bezier(.2, .6, .2, 1); }
+  .drawer-enter-from, .drawer-leave-to { opacity: 0; }
+  .drawer-enter-from .drawer, .drawer-leave-to .drawer { transform: translateX(40px); }
+  .drawer .tabs { align-self: flex-start; }
+  .range { width: 100%; height: 40px; accent-color: var(--color-primary); }
+  .presets { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+  .field-label .t-mono-sm { text-transform: none; letter-spacing: 0; margin-left: var(--space-2); color: var(--color-text-primary); }
+
+  /* ---- Аватар: чернильный контур на бумаге, оживлён CSS по состоянию и настроению агента ---- */
+  .pet { width: 176px; height: auto; color: var(--color-text-primary); overflow: visible; }
+  .pet .ink { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  .pet .paper { fill: var(--color-surface); }
+  .pet .solid { fill: currentColor; stroke: none; }
+  .pet .patch { fill: var(--color-elevated); stroke: none; }
+  .pet .zzz text { font-family: var(--font-mono); font-weight: 600; }
+
+  .pet .head { transform-box: fill-box; transform-origin: 50% 100%; animation: breathe 4s ease-in-out infinite; }
+  @keyframes breathe { 50% { transform: translateY(1.5px); } }
+  .pet .pose, .pet .ear, .pet .tail { transition: transform .35s ease; }
+
+  .pet .eyes-open { transform-box: fill-box; transform-origin: 50% 50%; animation: blink 5s infinite; }
+  @keyframes blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+  .pet .eyes-closed, .pet .brows, .pet .lids, .pet .zzz, .pet .tongue, .pet .mouth-flat { display: none; }
+
+  .pet .ear { transform-box: fill-box; }
+  .pet[data-kind="CAT"] .ear { transform-origin: 50% 100%; }
+  .pet[data-kind="DOG"] .ear { transform-origin: 50% 0%; }
+  .pet .tail { transform-box: fill-box; transform-origin: 0% 100%; }
+  .pet .pupil { transform-box: fill-box; transform-origin: 50% 50%; }
+  .pet .whiskers { transform-box: fill-box; }
+  .pet .whiskers-l { transform-origin: 100% 50%; }
+  .pet .whiskers-r { transform-origin: 0% 50%; }
+  .pet .mouth { transform-box: fill-box; transform-origin: 50% 0%; }
+
+  /* Спит: глаза закрыты, уши опущены, над головой всплывают z. */
+  .pet[data-mood="SLEEPY"] .eyes-open { display: none; }
+  .pet[data-mood="SLEEPY"] .eyes-closed, .pet[data-mood="SLEEPY"] .zzz { display: block; }
+  .pet[data-mood="SLEEPY"] .pose { transform: rotate(-4deg) translateY(2px); }
+  .pet[data-mood="SLEEPY"] .head { animation-duration: 6s; }
+  .pet[data-mood="SLEEPY"] .zzz text { animation: floatz 2.6s ease-in-out infinite; }
+  .pet[data-mood="SLEEPY"] .zzz text:nth-child(2) { animation-delay: .8s; }
+  .pet[data-mood="SLEEPY"] .zzz text:nth-child(3) { animation-delay: 1.6s; }
+  @keyframes floatz { 0% { opacity: 0; transform: translateY(4px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translateY(-8px); } }
+  .pet[data-kind="CAT"][data-mood="SLEEPY"] .ear-l { transform: rotate(-12deg); }
+  .pet[data-kind="CAT"][data-mood="SLEEPY"] .ear-r { transform: rotate(12deg); }
+
+  /* Насторожился: уши вверх, зрачки бегают, хвост ходит. */
+  .pet[data-mood="CURIOUS"] .pupil { animation: lookaround 2s ease-in-out infinite; }
+  @keyframes lookaround { 0%, 100% { transform: translate(-1.5px, -2px); } 50% { transform: translate(1.5px, -2px); } }
+  .pet[data-kind="CAT"][data-mood="CURIOUS"] .ear { transform: scaleY(1.12); }
+  .pet[data-kind="DOG"][data-mood="CURIOUS"] .ear-l { transform: rotate(22deg); }
+  .pet[data-kind="DOG"][data-mood="CURIOUS"] .ear-r { transform: rotate(-22deg); }
+  .pet[data-mood="CURIOUS"] .tail { animation: swing 2.2s ease-in-out infinite; }
+  @keyframes swing { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(10deg); } }
+
+  /* Отвечает: усы подрагивают, рот шевелится, хвост быстрее. */
+  .pet[data-mood="CHATTY"] .whiskers-l { animation: twitch-l .45s ease-in-out infinite alternate; }
+  .pet[data-mood="CHATTY"] .whiskers-r { animation: twitch-r .45s ease-in-out infinite alternate; }
+  @keyframes twitch-l { to { transform: rotate(5deg); } }
+  @keyframes twitch-r { to { transform: rotate(-5deg); } }
+  .pet[data-mood="CHATTY"] .mouth { animation: talk .32s ease-in-out infinite alternate; }
+  @keyframes talk { to { transform: scaleY(1.7); } }
+  .pet[data-mood="CHATTY"] .tail { animation: swing 1.1s ease-in-out infinite; }
+  .pet[data-kind="DOG"][data-mood="CHATTY"] .tongue { display: block; }
+  .pet[data-kind="DOG"][data-mood="CHATTY"] .tail { animation-duration: .5s; }
+
+  /* Не в духе: брови, уши назад, хвост опущен, рот в линию. */
+  .pet[data-mood="GRUMPY"] .brows { display: block; }
+  .pet[data-mood="GRUMPY"] .mouth { display: none; }
+  .pet[data-mood="GRUMPY"] .mouth-flat { display: block; }
+  .pet[data-mood="GRUMPY"] .tail { transform: rotate(-22deg); }
+  .pet[data-kind="CAT"][data-mood="GRUMPY"] .ear-l { transform: rotate(-30deg); }
+  .pet[data-kind="CAT"][data-mood="GRUMPY"] .ear-r { transform: rotate(30deg); }
+
+  /* Устал: веки полуопущены, голова ниже, уши чуть вниз. */
+  .pet[data-mood="TIRED"] .lids { display: block; }
+  .pet[data-mood="TIRED"] .pose { transform: translateY(3px); }
+  .pet[data-mood="TIRED"] .eyes-open { animation-duration: 3s; }
+  .pet[data-kind="CAT"][data-mood="TIRED"] .ear-l { transform: rotate(-10deg); }
+  .pet[data-kind="CAT"][data-mood="TIRED"] .ear-r { transform: rotate(10deg); }
+
+  /* Доволен: хвост ходит неспешно; у пса — виляет. */
+  .pet[data-mood="CONTENT"] .tail { animation: swing 3.5s ease-in-out infinite; }
+  .pet[data-kind="DOG"][data-mood="CONTENT"] .tail { animation-duration: .9s; }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <nav class="nav page">
+    <span class="nav-brand">
+      <span class="nav-brand-mark" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5c.67 0 1.35.09 2 .26 1.78-2 5.03-2.84 6.42-2.26 1.4.58-.42 7-.42 7 .57 1.07 1 2.24 1 3.44C21 17.9 16.97 21 12 21s-9-3-9-7.56c0-1.25.5-2.4 1-3.44 0 0-1.89-6.42-.5-7 1.39-.58 4.72.23 6.5 2.23A9.04 9.04 0 0 1 12 5Z"/>
+          <path d="M8 14v.5"/><path d="M16 14v.5"/><path d="M11.25 16.25h1.5L12 17l-.75-.75Z"/>
+        </svg>
+      </span>
+      AI Advent
+    </span>
+    <span class="row">
+      <span class="chip nav-stack" data-tone="neutral">Kotlin · Spring Boot · DeepSeek</span>
+      <button class="btn btn-secondary btn-sm" @click="openSettings" :disabled="!agent">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 4h-3"/><path d="M11 4H3"/><path d="M21 12h-9"/><path d="M7 12H3"/><path d="M21 20h-5"/><path d="M9 20H3"/>
+          <path d="M14 2v4"/><path d="M5 10v4"/><path d="M16 18v4"/>
+        </svg>
+        Настройки агента
+      </button>
+    </span>
+  </nav>
+
+  <main class="page page-body workspace" v-if="agent">
+
+    <!-- ================= Диалог ================= -->
+    <section class="card chat">
+      <header class="chat-head row-between">
+        <span class="t-label-sm t-muted">Диалог с {{ instrumental(agent.name) }}</span>
+        <span class="chip" data-tone="neutral">{{ messages.length }} {{ plural(messages.length, 'сообщение', 'сообщения', 'сообщений') }}</span>
+      </header>
+
+      <div class="thread" ref="thread">
+        <div class="empty" v-if="!messages.length && !live">
+          <p class="t-body-md">{{ agent.name }} ждёт вопроса.</p>
+          <p class="t-body-sm">Напишите что-нибудь. Справа видно, что агент при этом делает: что вспомнил, что отправил модели, сколько это заняло.</p>
+        </div>
+
+        <article class="msg" v-for="m in messages" :key="m.id" :data-role="m.role">
+          <div class="msg-meta">
+            <span class="who">{{ m.role === 'USER' ? 'Вы' : agent.name }}</span>
+            <span>{{ time(m.at) }}</span>
+          </div>
+          <div class="bubble" v-if="m.role === 'ASSISTANT'" v-html="markdown(m.content)"></div>
+          <div class="bubble" v-else-if="m.role === 'SYSTEM'">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>
+            </svg>
+            <span>{{ m.content }}</span>
+          </div>
+          <div class="bubble" v-else>{{ m.content }}</div>
+        </article>
+
+        <article class="msg" data-role="ASSISTANT" v-if="live">
+          <div class="msg-meta"><span class="who">{{ agent.name }}</span><span>{{ agent.state === 'THINKING' ? 'думает' : 'отвечает' }}</span></div>
+          <div class="bubble">
+            <span class="typing" v-if="!live.content"><i></i><i></i><i></i></span>
+            <template v-else><span v-html="markdown(live.content)"></span><span class="caret"></span></template>
+          </div>
+        </article>
+      </div>
+
+      <footer class="composer">
+        <textarea class="textarea" rows="1" v-model="draft" :disabled="busy" ref="input"
+                  :placeholder="busy ? agent.name + ' отвечает…' : 'Спросите ' + accusative(agent.name) + ' о чём угодно'"
+                  @keydown.enter.exact.prevent="send" @input="autosize"></textarea>
+        <button class="btn btn-primary btn-icon" @click="send" :disabled="busy || !draft.trim()" title="Отправить — Enter, перенос строки — Shift+Enter">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9 22 2Z"/>
+          </svg>
+        </button>
+      </footer>
+    </section>
+
+    <!-- ================= Агент ================= -->
+    <aside class="brain stack stack-md">
+
+      <section class="card stack stack-sm">
+        <div class="avatar-wrap">
+          <pet-avatar :kind="agent.avatar" :state="agent.state" :mood="agent.mood"></pet-avatar>
+        </div>
+        <div class="row-between">
+          <h1 class="t-title-md agent-name">{{ agent.name }}</h1>
+          <span class="state-pill" :data-state="agent.state">
+            <span class="badge-dot" :data-tone="stateTone"></span>{{ stateLabel }}
+          </span>
+        </div>
+        <p class="t-body-sm t-muted mood-line">{{ moodLabel }}</p>
+        <div class="meta">
+          <span class="chip" data-tone="neutral">{{ agent.settings.model }}</span>
+          <span class="chip" data-tone="neutral">t° {{ agent.settings.temperature }}</span>
+          <span class="chip" data-tone="neutral">память {{ agent.settings.memoryWindow }} {{ plural(agent.settings.memoryWindow, 'ход', 'хода', 'ходов') }}</span>
+          <span class="chip" data-tone="neutral" v-if="!agent.settings.persona">без персоны</span>
+        </div>
+      </section>
+
+      <section class="card stack stack-sm">
+        <div class="row-between">
+          <span class="t-label-sm t-muted">{{ turnTitle }}</span>
+          <span class="t-mono-sm t-muted" v-if="turn && !busy">{{ fmt(turn.latencyMs) }} мс</span>
+        </div>
+        <p class="t-body-sm t-muted" style="margin: 0;" v-if="!steps.length">
+          Здесь будет видно, что агент делает с каждым вопросом: вспоминает, собирает промпт, ждёт модель, запоминает.
+        </p>
+        <ol class="timeline" v-else>
+          <li v-for="(s, i) in steps" :key="i" :class="{ 'is-live': busy && i === steps.length - 1, 'is-fail': s.title === 'Сбой' }">
+            <span class="when">+{{ fmt(s.offsetMs) }} мс</span>
+            <span>
+              <div class="what">{{ s.title }}</div>
+              <div class="how" v-if="s.detail">{{ s.detail }}</div>
+            </span>
+          </li>
+        </ol>
+        <details class="reasoning" v-if="reasoning">
+          <summary>Ход мысли модели — {{ fmt(reasoning.length) }} символов, в ответ не попадает</summary>
+          <pre>{{ reasoning }}</pre>
+        </details>
+      </section>
+
+      <section class="card stack stack-sm">
+        <div class="row-between">
+          <span class="t-label-sm t-muted">Память</span>
+          <button class="btn btn-tertiary btn-sm" @click="forget" :disabled="busy || !agent.memory.messages.length">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+            </svg>
+            Забыть всё
+          </button>
+        </div>
+        <div class="facts">
+          <div class="fact"><span class="fact-label">В памяти</span><span class="fact-value">{{ agent.memory.messages.length }} <small>сообщ.</small></span></div>
+          <div class="fact"><span class="fact-label">Уйдёт в промпт</span><span class="fact-value">{{ agent.memory.inPrompt }} <small>сообщ.</small></span></div>
+          <div class="fact"><span class="fact-label">Окно</span><span class="fact-value">{{ agent.memory.window }} <small>{{ plural(agent.memory.window, 'ход', 'хода', 'ходов') }}</small></span></div>
+        </div>
+      </section>
+
+      <section class="card stack stack-sm">
+        <span class="t-label-sm t-muted">За всё время</span>
+        <div class="facts">
+          <div class="fact">
+            <span class="fact-label">Ходов</span>
+            <span class="fact-value">{{ agent.stats.turns }} <small v-if="agent.stats.failures">+{{ agent.stats.failures }} {{ plural(agent.stats.failures, 'сбой', 'сбоя', 'сбоев') }}</small></span>
+          </div>
+          <div class="fact">
+            <span class="fact-label">Токены вх → вых</span>
+            <span class="fact-value">{{ fmt(agent.stats.promptTokens) }} <small>→</small> {{ fmt(agent.stats.completionTokens) }}</span>
+          </div>
+          <div class="fact">
+            <span class="fact-label">Средний ответ</span>
+            <span class="fact-value">{{ seconds(agent.stats.averageLatencyMs) }} <small>с</small></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card stack stack-sm">
+        <span class="t-label-sm t-muted">Журнал</span>
+        <ul class="log">
+          <li v-for="(e, i) in logNewestFirst" :key="i">
+            <span class="when">{{ time(e.at) }}</span>
+            <span class="badge-dot" :data-tone="logTone(e.tone)"></span>
+            <span>{{ e.message }}</span>
+          </li>
+        </ul>
+      </section>
+
+    </aside>
+  </main>
+
+  <main class="page page-body" v-else>
+    <section class="card card-accent" data-accent="danger" v-if="loadError">
+      <p class="t-body-md" style="margin: 0;">{{ loadError }}</p>
+    </section>
+    <p class="t-body-sm t-muted" v-else>Бужу агента…</p>
+  </main>
+
+  <!-- ================= Настройки ================= -->
+  <transition name="drawer">
+    <div class="drawer-backdrop" v-if="settings.open" @click.self="closeSettings" @keydown.esc="closeSettings">
+      <aside class="drawer card stack stack-md" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <header class="row-between">
+          <h2 id="settings-title" class="t-title-md" style="margin: 0;">Настройки агента</h2>
+          <button class="btn btn-tertiary btn-icon btn-sm" @click="closeSettings" aria-label="Закрыть">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+            </svg>
+          </button>
+        </header>
+
+        <div class="presets">
+          <span class="t-label-sm t-muted">Заготовки:</span>
+          <button class="btn btn-secondary btn-sm" v-for="p in presets" :key="p.id" @click="applyPreset(p)">{{ p.title }}</button>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label class="field-label" for="f-name">Имя</label>
+            <input id="f-name" class="input" v-model="form.name" maxlength="40">
+          </div>
+          <div class="field">
+            <span class="field-label">Облик</span>
+            <div class="tabs" role="tablist" aria-label="Облик агента">
+              <button class="tab" role="tab" type="button" :aria-selected="form.avatar === 'CAT'" @click="form.avatar = 'CAT'">Кот</button>
+              <button class="tab" role="tab" type="button" :aria-selected="form.avatar === 'DOG'" @click="form.avatar = 'DOG'">Пёс</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="f-persona">Персона — системная инструкция</label>
+          <textarea id="f-persona" class="textarea" rows="7" v-model="form.persona" style="height: auto; resize: vertical;"></textarea>
+          <p class="field-help">Пусто — модель без характера. Персона уходит первым сообщением каждого промпта.</p>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label class="field-label" for="f-model">Модель</label>
+            <select id="f-model" class="select" v-model="form.model">
+              <option v-for="m in agent.availableModels" :key="m" :value="m">{{ m }}</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="f-temp">Температура <span class="t-mono-sm">{{ form.temperature.toFixed(1) }}</span></label>
+            <input id="f-temp" class="range" type="range" min="0" max="2" step="0.1" v-model.number="form.temperature">
+            <p class="field-help" v-if="form.model === 'deepseek-reasoner'">deepseek-reasoner температуру игнорирует.</p>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label class="field-label" for="f-max">Потолок ответа, токенов</label>
+            <input id="f-max" class="input" type="number" min="16" max="8192" v-model.number="form.maxTokens">
+          </div>
+          <div class="field">
+            <label class="field-label" for="f-mem">Окно памяти, ходов</label>
+            <input id="f-mem" class="input" type="number" min="0" max="50" v-model.number="form.memoryWindow">
+            <p class="field-help">0 — каждый вопрос как первый.</p>
+          </div>
+        </div>
+
+        <p class="field-help is-error" style="margin: 0;" v-if="settings.error">{{ settings.error }}</p>
+
+        <div class="divider"></div>
+
+        <footer class="row-between" style="flex-wrap: wrap; gap: var(--space-3);">
+          <p class="field-help" style="margin: 0;">Память при смене настроек сохраняется.</p>
+          <span class="row">
+            <button class="btn btn-tertiary" @click="closeSettings">Отмена</button>
+            <button class="btn btn-primary" @click="saveSettings" :disabled="settings.saving">{{ settings.saving ? 'Сохраняю…' : 'Сохранить' }}</button>
+          </span>
+        </footer>
+      </aside>
+    </div>
+  </transition>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, reactive, computed, toRefs, ref, nextTick, onMounted, onBeforeUnmount } = Vue;
+
+/* ---------- markdown: минимальный рендерер, весь текст экранируется до разметки ---------- */
+const ESCAPE = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const escapeHtml = (text) => text.replace(/[&<>"']/g, c => ESCAPE[c]);
+
+function inlineMd(text) {
+  return text
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[\s(«"'])\*([^*\n]+)\*/gm, '$1<em>$2</em>')
+    .replace(/(^|[\s(«"'])_([^_\n]+)_/gm, '$1<em>$2</em>');
+}
+
+function blocksMd(text) {
+  const out = [];
+  let list = null;
+  let para = [];
+  const flushList = () => {
+    if (!list) return;
+    const start = list.tag === 'ol' && list.start !== 1 ? ` start="${list.start}"` : '';
+    out.push(`<${list.tag}${start}>${list.items.map(i => `<li>${i}</li>`).join('')}</${list.tag}>`);
+    list = null;
+  };
+  const flushPara = () => {
+    if (!para.length) return;
+    out.push(`<p>${para.join('<br>')}</p>`);
+    para = [];
+  };
+  for (const raw of text.split('\n')) {
+    const line = raw.trimEnd();
+    if (!line.trim()) { flushList(); flushPara(); continue; }
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) { flushList(); flushPara(); out.push(`<h4>${inlineMd(heading[1])}</h4>`); continue; }
+
+    // Тематический разделитель: без него модель оставляет в тексте три дефиса подряд.
+    if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line)) { flushList(); flushPara(); out.push('<hr>'); continue; }
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
+    const numbered = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+    if (bullet || numbered) {
+      flushPara();
+      const tag = bullet ? 'ul' : 'ol';
+      const start = numbered ? Number(numbered[1]) : 1;
+      if (!list || list.tag !== tag) { flushList(); list = { tag, start, items: [] }; }
+      list.items.push(inlineMd(bullet ? bullet[1] : numbered[2]));
+      continue;
+    }
+    flushList();
+    para.push(inlineMd(line));
+  }
+  flushList();
+  flushPara();
+  return out.join('');
+}
+
+function markdown(text) {
+  return escapeHtml(text ?? '')
+    .split('```')
+    .map((part, i) => i % 2
+      ? `<pre>${part.replace(/^[\w-]*\r?\n/, '').replace(/\s+$/, '')}</pre>`
+      : blocksMd(part))
+    .join('');
+}
+
+/* ---------- словари ---------- */
+const STATE_LABEL = { IDLE: 'свободен', THINKING: 'думает', ANSWERING: 'отвечает' };
+const STATE_TONE = { IDLE: 'neutral', THINKING: 'info', ANSWERING: 'success' };
+const MOOD_LABEL = {
+  SLEEPY: 'Дремлет: в диалоге тихо. Спросите что-нибудь — проснётся.',
+  CURIOUS: 'Насторожился: вопрос получен, обдумывает.',
+  CHATTY: 'Отвечает: слова идут прямо сейчас.',
+  GRUMPY: 'Не в духе: последний ход сорвался.',
+  TIRED: 'Устал: последний ответ дался тяжело, дольше 15 секунд.',
+  CONTENT: 'Доволен: всё идёт как надо.',
+};
+const LOG_TONE = { NEUTRAL: 'neutral', INFO: 'info', SUCCESS: 'success', DANGER: 'danger' };
+
+const fmt = (n) => (n ?? 0).toLocaleString('ru-RU');
+const seconds = (ms) => ((ms ?? 0) / 1000).toFixed(1).replace('.', ',');
+const time = (iso) => iso ? new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
+function plural(n, one, few, many) {
+  const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return many;
+  if (b > 1 && b < 5) return few;
+  if (b === 1) return one;
+  return many;
+}
+/**
+ * Имя агента задаёт пользователь, а в интерфейсе оно стоит в трёх падежах: «спросите Барсика»,
+ * «диалог с Барсиком». Правила покрывают типичные клички — на согласную, на -а и на -я;
+ * всё остальное остаётся как есть, потому что склонять наугад хуже, чем не склонять.
+ */
+function accusative(name) {
+  if (/[бвгджзйклмнпрстфхцчшщь]$/i.test(name)) return name.replace(/ь$/i, '') + 'а';
+  if (/а$/i.test(name)) return name.slice(0, -1) + 'у';
+  if (/я$/i.test(name)) return name.slice(0, -1) + 'ю';
+  return name;
+}
+function instrumental(name) {
+  if (/[бвгджзклмнпрстфхцчшщ]$/i.test(name)) return name + 'ом';
+  if (/[йь]$/i.test(name)) return name.slice(0, -1) + 'ем';
+  if (/а$/i.test(name)) return name.slice(0, -1) + 'ой';
+  if (/я$/i.test(name)) return name.slice(0, -1) + 'ей';
+  return name;
+}
+
+/* ---------- аватар: контурный кот или пёс, всё поведение — в CSS по data-атрибутам ---------- */
+const PetAvatar = {
+  props: { kind: String, state: String, mood: String },
+  template: `
+    <svg class="pet" viewBox="0 0 200 160" :data-kind="kind" :data-state="state" :data-mood="mood" aria-hidden="true">
+      <template v-if="kind === 'DOG'">
+        <path class="tail ink" d="M130 138 C158 132 168 110 158 100"/>
+        <path class="ink paper" d="M64 150 C64 118 82 102 100 102 C118 102 136 118 136 150 Z"/>
+        <path class="ink" d="M84 150 q6 -8 12 0 M104 150 q6 -8 12 0"/>
+        <g class="pose">
+          <g class="head">
+            <circle class="ink paper" cx="100" cy="76" r="38"/>
+            <path class="ear ear-l ink paper" d="M68 52 C52 58 46 92 62 100 C72 98 76 74 74 54 Z"/>
+            <path class="ear ear-r ink paper" d="M132 52 C148 58 154 92 138 100 C128 98 124 74 126 54 Z"/>
+            <circle class="patch" cx="114" cy="72" r="12"/>
+            <g class="eyes-open">
+              <ellipse class="ink paper" cx="86" cy="72" rx="5.5" ry="6.5"/>
+              <ellipse class="ink paper" cx="114" cy="72" rx="5.5" ry="6.5"/>
+              <circle class="pupil solid" cx="86" cy="73" r="2.8"/>
+              <circle class="pupil solid" cx="114" cy="73" r="2.8"/>
+              <g class="lids"><path class="ink paper" d="M80.5 72 A5.5 6.5 0 0 1 91.5 72 Z"/><path class="ink paper" d="M108.5 72 A5.5 6.5 0 0 1 119.5 72 Z"/></g>
+            </g>
+            <g class="eyes-closed ink"><path d="M80 73 Q86 79 92 73"/><path d="M108 73 Q114 79 120 73"/></g>
+            <g class="brows ink"><path d="M78 61 L92 66"/><path d="M122 61 L108 66"/></g>
+            <ellipse class="ink paper" cx="100" cy="92" rx="16" ry="11"/>
+            <ellipse class="solid" cx="100" cy="87" rx="5" ry="3.6"/>
+            <path class="tongue ink paper" d="M96.5 98 C96.5 107 103.5 107 103.5 98 Z"/>
+            <path class="mouth ink" d="M92 96 Q100 103 108 96"/>
+            <path class="mouth-flat ink" d="M93 97 L107 97"/>
+          </g>
+        </g>
+        <g class="zzz solid"><text x="140" y="52" font-size="11">z</text><text x="150" y="40" font-size="14">z</text><text x="162" y="27" font-size="17">z</text></g>
+      </template>
+      <template v-else>
+        <path class="tail ink" d="M132 142 C172 138 184 106 170 92"/>
+        <path class="ink paper" d="M64 150 C64 118 82 102 100 102 C118 102 136 118 136 150 Z"/>
+        <path class="ink" d="M84 150 q6 -8 12 0 M104 150 q6 -8 12 0"/>
+        <g class="pose">
+          <g class="head">
+            <path class="ear ear-l ink paper" d="M64 68 L66 34 L92 52 Z"/>
+            <path class="ear ear-r ink paper" d="M136 68 L134 34 L108 52 Z"/>
+            <circle class="ink paper" cx="100" cy="76" r="38"/>
+            <g class="eyes-open">
+              <ellipse class="ink paper" cx="86" cy="72" rx="6" ry="7"/>
+              <ellipse class="ink paper" cx="114" cy="72" rx="6" ry="7"/>
+              <circle class="pupil solid" cx="86" cy="73" r="2.6"/>
+              <circle class="pupil solid" cx="114" cy="73" r="2.6"/>
+              <g class="lids"><path class="ink paper" d="M80 72 A6 7 0 0 1 92 72 Z"/><path class="ink paper" d="M108 72 A6 7 0 0 1 120 72 Z"/></g>
+            </g>
+            <g class="eyes-closed ink"><path d="M80 73 Q86 79 92 73"/><path d="M108 73 Q114 79 120 73"/></g>
+            <g class="brows ink"><path d="M78 61 L92 66"/><path d="M122 61 L108 66"/></g>
+            <path class="solid" d="M96.5 84 L103.5 84 L100 88.5 Z"/>
+            <path class="mouth ink" d="M93 90 Q97 95 100 89 Q103 95 107 90"/>
+            <path class="mouth-flat ink" d="M94 92 L106 92"/>
+            <g class="whiskers whiskers-l ink"><path d="M58 80 L84 84"/><path d="M56 88 L84 88"/><path d="M58 96 L84 92"/></g>
+            <g class="whiskers whiskers-r ink"><path d="M142 80 L116 84"/><path d="M144 88 L116 88"/><path d="M142 96 L116 92"/></g>
+          </g>
+        </g>
+        <g class="zzz solid"><text x="140" y="52" font-size="11">z</text><text x="150" y="40" font-size="14">z</text><text x="162" y="27" font-size="17">z</text></g>
+      </template>
+    </svg>`,
+};
+
+/* ---------- чтение server-sent events из fetch: EventSource умеет только GET ---------- */
+async function readSse(response, onEvent) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let cut;
+    while ((cut = buffer.indexOf('\n\n')) >= 0) {
+      const raw = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      let event = 'message';
+      const data = [];
+      for (const line of raw.split('\n')) {
+        if (line.startsWith('event:')) event = line.slice(6).trim();
+        else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
+      }
+      if (data.length) onEvent(event, JSON.parse(data.join('\n')));
+    }
+  }
+}
+
+/* ---------- приложение ---------- */
+let nextId = 1;
+const app = createApp({
+  components: { PetAvatar },
+  setup() {
+    const state = reactive({
+      agent: null,
+      presets: [],
+      loadError: null,
+      messages: [],
+      draft: '',
+      busy: false,
+      live: null,
+      steps: [],
+      turn: null,
+      settings: { open: false, saving: false, error: null },
+      form: {},
+    });
+    const thread = ref(null);
+    const input = ref(null);
+
+    const stateLabel = computed(() => STATE_LABEL[state.agent?.state] ?? '');
+    const stateTone = computed(() => STATE_TONE[state.agent?.state] ?? 'neutral');
+    const moodLabel = computed(() => MOOD_LABEL[state.agent?.mood] ?? '');
+    const logNewestFirst = computed(() => [...(state.agent?.log ?? [])].reverse());
+    const reasoning = computed(() => state.live?.reasoning || state.turn?.reasoning || '');
+    const turnTitle = computed(() => {
+      if (!state.agent) return 'Ход агента';
+      if (state.busy) return `Ход ${state.agent.stats.turns + state.agent.stats.failures + 1} — идёт`;
+      return state.turn ? `Ход ${state.turn.number} — как это было` : 'Ход агента';
+    });
+
+    const logTone = (tone) => LOG_TONE[tone] ?? 'neutral';
+
+    function scrollThread() {
+      nextTick(() => { if (thread.value) thread.value.scrollTop = thread.value.scrollHeight; });
+    }
+    function autosize() {
+      const el = input.value;
+      if (!el) return;
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 180) + 'px';
+    }
+    function pushMessage(role, content, at = new Date().toISOString()) {
+      state.messages.push({ id: nextId++, role, content, at });
+      scrollThread();
+    }
+
+    function applySnapshot(snapshot) {
+      state.agent = snapshot;
+      if (!state.busy) {
+        state.turn = snapshot.lastTurn;
+        state.steps = snapshot.lastTurn?.steps ?? [];
+      }
+    }
+
+    async function load() {
+      try {
+        const [agent, presets] = await Promise.all([
+          fetch('/api/agent').then(r => { if (!r.ok) throw new Error('Агент не отвечает: ' + r.status); return r.json(); }),
+          fetch('/api/presets').then(r => r.json()),
+        ]);
+        state.presets = presets;
+        state.messages = agent.memory.messages.map(m => ({ id: nextId++, role: m.role, content: m.content, at: m.at }));
+        applySnapshot(agent);
+        scrollThread();
+      } catch (e) {
+        state.loadError = e.message ?? 'Не удалось загрузить агента';
+      }
+    }
+
+    /** Настроение зависит от времени: молчание усыпляет. Раз в полминуты сверяемся с агентом. */
+    async function refreshMood() {
+      if (state.busy || !state.agent) return;
+      try {
+        const snapshot = await fetch('/api/agent').then(r => r.ok ? r.json() : null);
+        if (snapshot && !state.busy) applySnapshot(snapshot);
+      } catch (_) { /* сеть моргнула — на следующем тике попробуем ещё */ }
+    }
+
+    async function send() {
+      const text = state.draft.trim();
+      if (!text || state.busy || !state.agent) return;
+
+      state.draft = '';
+      nextTick(autosize);
+      state.busy = true;
+      state.live = { content: '', reasoning: '' };
+      state.steps = [];
+      state.turn = null;
+      // Пока запрос летит на сервер, агент уже показан думающим: событие от него это
+      // подтвердит через мгновение. Иначе кот секунду выглядел бы безучастным.
+      state.agent.state = 'THINKING';
+      state.agent.mood = 'CURIOUS';
+      pushMessage('USER', text);
+
+      try {
+        const res = await fetch('/api/agent/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          throw new Error(data?.error ?? ('Ошибка ' + res.status));
+        }
+        await readSse(res, handleEvent);
+      } catch (e) {
+        pushMessage('SYSTEM', e.message ?? 'Связь с агентом прервалась');
+        refreshMood();
+      } finally {
+        state.busy = false;
+        state.live = null;
+        nextTick(() => input.value?.focus());
+      }
+    }
+
+    function handleEvent(event, data) {
+      switch (event) {
+        case 'state':
+          state.agent.state = data.state;
+          state.agent.mood = data.mood;
+          break;
+        case 'step':
+          state.steps.push(data);
+          break;
+        case 'token':
+          state.live.content += data.text;
+          scrollThread();
+          break;
+        case 'reasoning':
+          state.live.reasoning += data.text;
+          break;
+        case 'done':
+          pushMessage('ASSISTANT', data.turn.answer);
+          state.busy = false;
+          state.live = null;
+          state.turn = data.turn;
+          state.steps = data.turn.steps;
+          applySnapshot(data.agent);
+          break;
+        case 'error':
+          pushMessage('SYSTEM', data.turn.error);
+          state.busy = false;
+          state.live = null;
+          state.turn = data.turn;
+          state.steps = data.turn.steps;
+          applySnapshot(data.agent);
+          break;
+      }
+    }
+
+    async function forget() {
+      if (state.busy) return;
+      const res = await fetch('/api/agent/memory', { method: 'DELETE' });
+      if (!res.ok) return;
+      state.messages = [];
+      applySnapshot(await res.json());
+    }
+
+    function openSettings() {
+      state.form = { ...state.agent.settings };
+      state.settings.error = null;
+      state.settings.open = true;
+    }
+    function closeSettings() { state.settings.open = false; }
+    function applyPreset(p) {
+      state.form.name = p.name;
+      state.form.avatar = p.avatar;
+      state.form.persona = p.persona;
+    }
+    async function saveSettings() {
+      state.settings.saving = true;
+      state.settings.error = null;
+      try {
+        const res = await fetch('/api/agent/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(state.form),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) { state.settings.error = data?.error ?? ('Ошибка ' + res.status); return; }
+        applySnapshot(data);
+        state.settings.open = false;
+      } catch (e) {
+        state.settings.error = e.message ?? 'Не удалось сохранить';
+      } finally {
+        state.settings.saving = false;
+      }
+    }
+
+    let moodTimer = null;
+    onMounted(() => { load(); moodTimer = setInterval(refreshMood, 30_000); });
+    onBeforeUnmount(() => clearInterval(moodTimer));
+
+    return {
+      ...toRefs(state), thread, input,
+      stateLabel, stateTone, moodLabel, logNewestFirst, reasoning, turnTitle, logTone,
+      markdown, fmt, seconds, time, plural, accusative, instrumental,
+      send, autosize, forget, openSettings, closeSettings, applyPreset, saveSettings,
+    };
+  },
+});
+app.mount('#app');
+</script>
+</body>
+</html>

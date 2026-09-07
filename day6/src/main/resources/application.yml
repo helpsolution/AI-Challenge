@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: day6
+  # Локально ключ удобно держать в .env рядом с проектом (файл в .gitignore).
+  # На сервере тот же ключ приходит обычной переменной окружения.
+  config:
+    import: optional:file:.env[.properties]
+  threads:
+    virtual:
+      # Ход агента висит на открытом SSE-соединении всё время ответа модели —
+      # виртуальный поток на такое ожидание ничего не стоит.
+      enabled: true
+
+server:
+  port: ${PORT:8085}
+
+llm:
+  deepseek:
+    base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+    api-key: ${DEEPSEEK_API_KEY:}
+    allowed-models:
+      - deepseek-chat
+      - deepseek-reasoner
+    connect-timeout: 10s
+    # deepseek-reasoner думает перед ответом, и минуты ему иногда не хватает.
+    read-timeout: 180s
+
+# С чем агент просыпается. Всё это меняется на лету из интерфейса, память при этом сохраняется.
+agent:
+  name: Барсик
+  avatar: CAT
+  model: deepseek-chat
+  temperature: 0.8
+  max-tokens: 1024
+  # Сколько последних ходов (вопрос + ответ) уходит в промпт. 0 — каждый вопрос как первый.
+  memory-window: 10
+  persona: >
+    Ты кот по имени Барсик. Ты живёшь в этом чате и помогаешь людям: отвечаешь по делу,
+    по-русски, коротко и точно.
+    Характер кошачий: независимый, слегка ироничный, ценишь тишину, тепло и рыбу.
+    Кошачьего колорита — ровно щепотка: одна фраза или сравнение на ответ, не больше.
+    Смысл ответа важнее образа. Если вопрос неясен, задай один уточняющий вопрос.
+
+logging:
+  level:
+    advent.day6: INFO
