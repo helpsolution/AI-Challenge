@@ -30,7 +30,7 @@ data class TurnStep(
     val detail: String? = null,
 )
 
-/** Полный протокол одного хода — от получения запроса до записи ответа в память. */
+/** Полный протокол одного хода — от получения запроса до разбора ответа. */
 data class TurnReport(
     val number: Int,
     val startedAt: Instant,

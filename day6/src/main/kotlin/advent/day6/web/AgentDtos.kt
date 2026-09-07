@@ -17,7 +17,6 @@ data class SettingsRequest(
     val model: String,
     val temperature: Double,
     val maxTokens: Int,
-    val memoryWindow: Int,
 ) {
     fun toSettings() = AgentSettings(
         name = name.trim(),
@@ -26,7 +25,6 @@ data class SettingsRequest(
         model = model.trim(),
         temperature = temperature,
         maxTokens = maxTokens,
-        memoryWindow = memoryWindow,
     )
 }
 

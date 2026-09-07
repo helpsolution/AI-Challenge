@@ -12,11 +12,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Агент — отдельная сущность с состоянием, а не обёртка над вызовом API.
  *
- * У него есть имя и характер ([settings]), память диалога ([memory]), текущее занятие
- * ([state]), настроение ([mood]) и журнал жизни. Каждый вопрос проходит через [ask]:
- * агент вспоминает контекст, собирает промпт, идёт к модели, отдаёт ответ по мере
- * генерации и запоминает ход. Каждый шаг фиксируется и выдаётся слушателю событием —
- * так снаружи видно, что именно агент делает, а не только что он в итоге сказал.
+ * У него есть имя и характер ([settings]), текущее занятие ([state]), настроение ([mood])
+ * и журнал жизни. Каждый вопрос проходит через [ask]: агент собирает промпт из своей
+ * персоны и вопроса, идёт к модели, отдаёт ответ по мере генерации. Каждый шаг фиксируется
+ * и выдаётся слушателю событием — так снаружи видно, что именно агент делает, а не только
+ * что он в итоге сказал.
+ *
+ * Памяти диалога у агента нет намеренно: каждый вопрос независим. Это ровно то, что просит
+ * задание дня, а контекст между ходами — тема следующих дней.
  *
  * Класс не знает ни про Spring, ни про HTTP: единственная зависимость — [LlmClient].
  */
@@ -36,8 +39,6 @@ class Agent(
     var state: AgentState = AgentState.IDLE
         private set
 
-    val memory = Memory()
-
     private val busy = AtomicBoolean(false)
     private val lock = Any()
     private val journal = ArrayDeque<LogEntry>()
@@ -51,10 +52,7 @@ class Agent(
     private val createdAt: Instant = clock.instant()
 
     init {
-        record(
-            LogTone.INFO,
-            "${settings.name} проснулся: модель ${settings.model}, окно памяти ${settings.memoryWindow} ходов",
-        )
+        record(LogTone.INFO, "${settings.name} проснулся: модель ${settings.model}")
     }
 
     val isBusy: Boolean get() = busy.get()
@@ -63,7 +61,6 @@ class Agent(
 
     fun snapshot(): AgentSnapshot = synchronized(lock) {
         val current = settings
-        val transcript = memory.transcript()
         AgentSnapshot(
             name = current.name,
             avatar = current.avatar,
@@ -71,11 +68,6 @@ class Agent(
             mood = moodLocked(),
             settings = current,
             availableModels = allowedModels.sorted(),
-            memory = MemoryView(
-                messages = transcript,
-                window = current.memoryWindow,
-                inPrompt = memory.recall(current.memoryWindow).size,
-            ),
             stats = AgentStats(turns, failures, promptTokens, completionTokens, totalLatencyMs),
             lastTurn = lastTurn,
             log = journal.toList(),
@@ -84,7 +76,7 @@ class Agent(
         )
     }
 
-    /** Меняет настройки на лету. Память при этом сохраняется — пересаживать характер в ту же голову можно. */
+    /** Меняет настройки на лету: агент тот же самый, характер другой. */
     fun reconfigure(newSettings: AgentSettings): AgentSnapshot {
         newSettings.validate(allowedModels)
         val changes = newSettings.describeChangesFrom(settings)
@@ -93,12 +85,6 @@ class Agent(
             LogTone.INFO,
             if (changes.isEmpty()) "Настройки сохранены без изменений" else "Перенастроен: ${changes.joinToString("; ")}",
         )
-        return snapshot()
-    }
-
-    fun forget(): AgentSnapshot {
-        val forgotten = memory.clear()
-        record(LogTone.NEUTRAL, "Память очищена: забыто $forgotten сообщений")
         return snapshot()
     }
 
@@ -165,22 +151,18 @@ class Agent(
                 transition(AgentState.THINKING)
                 step("Получил вопрос", "${text.length} символов")
 
-                val recalled = memory.recall(current.memoryWindow)
-                step(
-                    if (recalled.isEmpty()) "Контекста нет" else "Вспомнил контекст",
-                    "${recalled.size} из ${memory.size} сообщений в памяти, окно ${current.memoryWindow} ходов",
-                )
-
                 val messages = buildList {
                     current.persona.takeIf { it.isNotBlank() }?.let { add(ApiMessage("system", it)) }
-                    recalled.forEach { add(ApiMessage(it.role.apiName, it.content)) }
                     add(ApiMessage("user", text))
                 }
                 promptMessages = messages.size
                 step(
                     "Собрал промпт",
-                    "${messages.size} сообщений, ${messages.sumOf { it.content.length }} символов" +
-                        if (current.persona.isBlank()) ", без системной инструкции" else ", первое — персона",
+                    if (current.persona.isBlank()) {
+                        "только вопрос, ${text.length} символов — персона не задана"
+                    } else {
+                        "персона и вопрос, ${messages.sumOf { it.content.length }} символов"
+                    },
                 )
 
                 step("Отправил модели", "${current.model}, temperature ${current.temperature}, до ${current.maxTokens} токенов")
@@ -224,9 +206,6 @@ class Agent(
                         completion.finishReason?.takeIf { it != "stop" }?.let { "остановка: $it" },
                     ).joinToString(", "),
                 )
-
-                memory.remember(text, startedAt, completion.content, clock.instant())
-                step("Запомнил ход", "в памяти ${memory.size} сообщений")
 
                 val report = TurnReport(
                     number = number,
@@ -289,7 +268,7 @@ class Agent(
     companion object {
         /** Сколько записей журнала держим: интерфейсу нужны последние, а не все. */
         const val JOURNAL_LIMIT = 60
-        /** После такой тишины в диалоге агент засыпает. */
+        /** После такой тишины агент засыпает. */
         val SLEEPY_AFTER: Duration = Duration.ofMinutes(2)
         /** Ответ дольше этого считается тяжёлым — агент устаёт. */
         const val TIRED_AFTER_MS = 15_000L

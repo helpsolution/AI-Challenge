@@ -14,7 +14,6 @@ data class AgentProperties(
     val model: String = "deepseek-chat",
     val temperature: Double = 0.8,
     val maxTokens: Int = 1024,
-    val memoryWindow: Int = 10,
 ) {
     fun toSettings() = AgentSettings(
         name = name.trim(),
@@ -23,6 +22,5 @@ data class AgentProperties(
         model = model,
         temperature = temperature,
         maxTokens = maxTokens,
-        memoryWindow = memoryWindow,
     )
 }

@@ -9,8 +9,9 @@ import org.springframework.context.annotation.Configuration
 class AgentConfiguration {
 
     /**
-     * Агент один на приложение и живёт столько же, сколько оно: память и журнал — в нём,
-     * а не в запросе. Именно это отличает его от вызова API, который заканчивается вместе с ответом.
+     * Агент один на приложение и живёт столько же, сколько оно: имя, характер, счётчики
+     * и журнал — в нём, а не в запросе. Именно это отличает его от вызова API,
+     * который заканчивается вместе с ответом.
      */
     @Bean
     fun agent(llm: LlmClient, agentProperties: AgentProperties, deepSeek: DeepSeekProperties): Agent =

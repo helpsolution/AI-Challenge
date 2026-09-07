@@ -16,8 +16,6 @@ data class AgentSettings(
     val model: String,
     val temperature: Double,
     val maxTokens: Int,
-    /** Сколько последних ходов (пар «вопрос-ответ») уходит в промпт. 0 — без памяти. */
-    val memoryWindow: Int,
 ) {
     fun validate(allowedModels: Set<String>) {
         require(name.isNotBlank()) { "Имя агента не может быть пустым" }
@@ -30,7 +28,6 @@ data class AgentSettings(
         require(maxTokens in MIN_MAX_TOKENS..MAX_MAX_TOKENS) {
             "Потолок ответа должен быть от $MIN_MAX_TOKENS до $MAX_MAX_TOKENS токенов"
         }
-        require(memoryWindow in 0..MAX_MEMORY_WINDOW) { "Окно памяти должно быть от 0 до $MAX_MEMORY_WINDOW ходов" }
     }
 
     /** Человекочитаемый список отличий — для журнала агента. */
@@ -41,7 +38,6 @@ data class AgentSettings(
         if (model != old.model) add("модель: ${old.model} → $model")
         if (temperature != old.temperature) add("температура: ${old.temperature} → $temperature")
         if (maxTokens != old.maxTokens) add("потолок ответа: ${old.maxTokens} → $maxTokens токенов")
-        if (memoryWindow != old.memoryWindow) add("окно памяти: ${old.memoryWindow} → $memoryWindow ходов")
     }
 
     companion object {
@@ -50,7 +46,6 @@ data class AgentSettings(
         const val MAX_TEMPERATURE = 2.0
         const val MIN_MAX_TOKENS = 16
         const val MAX_MAX_TOKENS = 8192
-        const val MAX_MEMORY_WINDOW = 50
     }
 }
 

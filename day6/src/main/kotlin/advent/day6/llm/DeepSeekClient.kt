@@ -2,12 +2,15 @@ package advent.day6.llm
 
 import advent.day6.config.DeepSeekProperties
 import org.slf4j.LoggerFactory
-import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
-import org.springframework.web.client.ResourceAccessException
-import org.springframework.web.client.RestClient
-import org.springframework.web.client.RestClient.RequestHeadersSpec.ConvertibleClientHttpResponse
 import tools.jackson.databind.ObjectMapper
+import java.io.IOException
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.net.http.HttpTimeoutException
+import java.nio.charset.StandardCharsets.UTF_8
 
 /**
  * Тонкая обёртка над HTTP API провайдера. Единственное место в приложении, которое знает
@@ -16,14 +19,26 @@ import tools.jackson.databind.ObjectMapper
  * Ответ читается как поток server-sent events: строки `data: {...}` разбираются по одной,
  * и каждый кусочек текста немедленно отдаётся вызывающему. Агент благодаря этому «говорит»
  * по мере генерации, а не молчит до конца.
+ *
+ * Здесь взят `java.net.http.HttpClient` напрямую, без RestClient: тело запроса собирается
+ * строкой, ответ читается потоком, и разбирать за нас нечего. Решающий довод — таймаут.
+ * `RestClient` с `JdkClientHttpRequestFactory` ожидание ответа не ограничивал: запрос,
+ * на который провайдер не ответил, висел дольше заданных трёх минут и держал агента
+ * заблокированным навсегда. У `HttpRequest.timeout` эта граница своя и срабатывает.
  */
 @Service
 class DeepSeekClient(
-    private val deepSeekRestClient: RestClient,
     private val properties: DeepSeekProperties,
     private val objectMapper: ObjectMapper,
 ) : LlmClient {
     private val log = LoggerFactory.getLogger(javaClass)
+
+    private val httpClient: HttpClient = HttpClient.newBuilder()
+        .connectTimeout(properties.connectTimeout)
+        .followRedirects(HttpClient.Redirect.NORMAL)
+        .build()
+
+    private val endpoint: URI = URI.create(properties.baseUrl.trimEnd('/') + COMPLETIONS_PATH)
 
     override fun stream(request: ChatCompletionRequest, onDelta: (LlmDelta) -> Unit): LlmCompletion {
         if (properties.apiKey.isBlank()) {
@@ -36,42 +51,55 @@ class DeepSeekClient(
 
         return try {
             send(body, relay)
-        } catch (e: ResourceAccessException) {
-            // Обрыв на подключении лечится повтором. Но если наружу уже ушёл хотя бы один
-            // токен, повторять нельзя: пользователь получил бы два ответа, склеенных в один.
+        } catch (e: HttpTimeoutException) {
+            // Повторять таймаут смысла нет: второе ожидание будет таким же долгим.
+            throw LlmException("LLM не ответил за ${properties.readTimeout.toSeconds()} с", cause = e)
+        } catch (e: IOException) {
+            // Обрыв соединения лечится повтором. Но если наружу уже ушёл хотя бы один токен,
+            // повторять нельзя: пользователь получил бы два ответа, склеенных в один.
             if (delivered) throw LlmException("Связь с LLM оборвалась посреди ответа: ${e.message}", cause = e)
             log.warn("Сетевой сбой при обращении к LLM, повторяю: {}", e.message)
             try {
                 send(body, relay)
-            } catch (retry: ResourceAccessException) {
+            } catch (retry: IOException) {
                 throw LlmException("Не удалось получить ответ от LLM: ${retry.message}", cause = retry)
             }
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw LlmException("Обращение к LLM прервано", cause = e)
         }
     }
 
-    private fun send(body: String, onDelta: (LlmDelta) -> Unit): LlmCompletion =
-        deepSeekRestClient.post()
-            .uri(COMPLETIONS_PATH)
-            .contentType(MediaType.APPLICATION_JSON)
-            .accept(MediaType.TEXT_EVENT_STREAM)
-            .body(body)
-            .exchange { _, response -> readStream(response, onDelta) }
+    private fun send(body: String, onDelta: (LlmDelta) -> Unit): LlmCompletion {
+        val httpRequest = HttpRequest.newBuilder(endpoint)
+            // Граница ожидания ответа. Без неё повисший запрос держит агента навсегда.
+            .timeout(properties.readTimeout)
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream")
+            .header("Authorization", "Bearer ${properties.apiKey}")
+            .POST(HttpRequest.BodyPublishers.ofString(body, UTF_8))
+            .build()
 
-    private fun readStream(response: ConvertibleClientHttpResponse, onDelta: (LlmDelta) -> Unit): LlmCompletion {
-        val status = response.statusCode
-        if (status.isError) {
-            val raw = response.bodyTo(String::class.java).orEmpty()
+        val response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofInputStream())
+        val status = response.statusCode()
+
+        if (status >= 400) {
+            val raw = response.body().use { it.readNBytes(ERROR_BODY_LIMIT).toString(UTF_8) }
             log.warn("LLM ответил ошибкой {}: {}", status, raw.take(500))
-            throw LlmException(providerErrorMessage(status.value(), raw), providerStatus = status)
+            throw LlmException(providerErrorMessage(status, raw), providerStatus = status)
         }
 
+        return response.body().use { readStream(it.bufferedReader(), onDelta) }
+    }
+
+    private fun readStream(reader: java.io.BufferedReader, onDelta: (LlmDelta) -> Unit): LlmCompletion {
         val content = StringBuilder()
         val reasoning = StringBuilder()
         var model: String? = null
         var finishReason: String? = null
         var usage: Usage? = null
 
-        response.body.bufferedReader().useLines { lines ->
+        reader.useLines { lines ->
             for (line in lines) {
                 if (!line.startsWith(DATA_PREFIX)) continue
                 val payload = line.removePrefix(DATA_PREFIX).trim()
@@ -95,10 +123,7 @@ class DeepSeekClient(
 
         if (content.isEmpty()) throw LlmException("LLM вернул ответ без текста")
 
-        log.info(
-            "LLM ok: model={}, finish={}, tokens={}",
-            model, finishReason, usage?.totalTokens,
-        )
+        log.info("LLM ok: model={}, finish={}, tokens={}", model, finishReason, usage?.totalTokens)
 
         return LlmCompletion(
             content = content.toString(),
@@ -122,5 +147,7 @@ class DeepSeekClient(
         const val COMPLETIONS_PATH = "/chat/completions"
         const val DATA_PREFIX = "data:"
         const val DONE_MARKER = "[DONE]"
+        /** Тело ошибки читаем ограниченно: в сообщение всё равно попадёт только начало. */
+        const val ERROR_BODY_LIMIT = 8 * 1024
     }
 }

@@ -9,7 +9,6 @@ import advent.day6.agent.PersonaPresets
 import advent.day6.config.DeepSeekProperties
 import org.slf4j.LoggerFactory
 import org.springframework.http.MediaType
-import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -36,9 +35,6 @@ class AgentController(
 
     @PutMapping("/agent/settings")
     fun reconfigure(@RequestBody request: SettingsRequest): AgentSnapshot = agent.reconfigure(request.toSettings())
-
-    @DeleteMapping("/agent/memory")
-    fun forget(): AgentSnapshot = agent.forget()
 
     @GetMapping("/presets")
     fun presets(): List<PersonaPreset> = PersonaPresets.all

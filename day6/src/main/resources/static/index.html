@@ -245,13 +245,18 @@
     <section class="card chat">
       <header class="chat-head row-between">
         <span class="t-label-sm t-muted">Диалог с {{ instrumental(agent.name) }}</span>
-        <span class="chip" data-tone="neutral">{{ messages.length }} {{ plural(messages.length, 'сообщение', 'сообщения', 'сообщений') }}</span>
+        <span class="chip" data-tone="warning" title="Памяти диалога у агента нет: в промпт уходит персона и один вопрос">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+          </svg>
+          каждый вопрос независим
+        </span>
       </header>
 
       <div class="thread" ref="thread">
         <div class="empty" v-if="!messages.length && !live">
           <p class="t-body-md">{{ agent.name }} ждёт вопроса.</p>
-          <p class="t-body-sm">Напишите что-нибудь. Справа видно, что агент при этом делает: что вспомнил, что отправил модели, сколько это заняло.</p>
+          <p class="t-body-sm">Напишите что-нибудь. Справа видно, что агент при этом делает: из чего собрал промпт, что отправил модели, сколько это заняло.</p>
         </div>
 
         <article class="msg" v-for="m in messages" :key="m.id" :data-role="m.role">
@@ -307,7 +312,6 @@
         <div class="meta">
           <span class="chip" data-tone="neutral">{{ agent.settings.model }}</span>
           <span class="chip" data-tone="neutral">t° {{ agent.settings.temperature }}</span>
-          <span class="chip" data-tone="neutral">память {{ agent.settings.memoryWindow }} {{ plural(agent.settings.memoryWindow, 'ход', 'хода', 'ходов') }}</span>
           <span class="chip" data-tone="neutral" v-if="!agent.settings.persona">без персоны</span>
         </div>
       </section>
@@ -333,23 +337,6 @@
           <summary>Ход мысли модели — {{ fmt(reasoning.length) }} символов, в ответ не попадает</summary>
           <pre>{{ reasoning }}</pre>
         </details>
-      </section>
-
-      <section class="card stack stack-sm">
-        <div class="row-between">
-          <span class="t-label-sm t-muted">Память</span>
-          <button class="btn btn-tertiary btn-sm" @click="forget" :disabled="busy || !agent.memory.messages.length">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-            </svg>
-            Забыть всё
-          </button>
-        </div>
-        <div class="facts">
-          <div class="fact"><span class="fact-label">В памяти</span><span class="fact-value">{{ agent.memory.messages.length }} <small>сообщ.</small></span></div>
-          <div class="fact"><span class="fact-label">Уйдёт в промпт</span><span class="fact-value">{{ agent.memory.inPrompt }} <small>сообщ.</small></span></div>
-          <div class="fact"><span class="fact-label">Окно</span><span class="fact-value">{{ agent.memory.window }} <small>{{ plural(agent.memory.window, 'ход', 'хода', 'ходов') }}</small></span></div>
-        </div>
       </section>
 
       <section class="card stack stack-sm">
@@ -447,11 +434,7 @@
           <div class="field">
             <label class="field-label" for="f-max">Потолок ответа, токенов</label>
             <input id="f-max" class="input" type="number" min="16" max="8192" v-model.number="form.maxTokens">
-          </div>
-          <div class="field">
-            <label class="field-label" for="f-mem">Окно памяти, ходов</label>
-            <input id="f-mem" class="input" type="number" min="0" max="50" v-model.number="form.memoryWindow">
-            <p class="field-help">0 — каждый вопрос как первый.</p>
+            <p class="field-help">Верхняя граница длины ответа.</p>
           </div>
         </div>
 
@@ -460,7 +443,7 @@
         <div class="divider"></div>
 
         <footer class="row-between" style="flex-wrap: wrap; gap: var(--space-3);">
-          <p class="field-help" style="margin: 0;">Память при смене настроек сохраняется.</p>
+          <p class="field-help" style="margin: 0;">Настройки применятся к следующему вопросу.</p>
           <span class="row">
             <button class="btn btn-tertiary" @click="closeSettings">Отмена</button>
             <button class="btn btn-primary" @click="saveSettings" :disabled="settings.saving">{{ settings.saving ? 'Сохраняю…' : 'Сохранить' }}</button>
@@ -723,6 +706,11 @@ const app = createApp({
       }
     }
 
+    /**
+     * Лента сообщений живёт только в открытой вкладке. Агент диалог не хранит, поэтому
+     * восстанавливать переписку после перезагрузки нечем — и притворяться, что есть, нельзя.
+     */
+
     async function load() {
       try {
         const [agent, presets] = await Promise.all([
@@ -730,9 +718,7 @@ const app = createApp({
           fetch('/api/presets').then(r => r.json()),
         ]);
         state.presets = presets;
-        state.messages = agent.memory.messages.map(m => ({ id: nextId++, role: m.role, content: m.content, at: m.at }));
         applySnapshot(agent);
-        scrollThread();
       } catch (e) {
         state.loadError = e.message ?? 'Не удалось загрузить агента';
       }
@@ -819,14 +805,6 @@ const app = createApp({
       }
     }
 
-    async function forget() {
-      if (state.busy) return;
-      const res = await fetch('/api/agent/memory', { method: 'DELETE' });
-      if (!res.ok) return;
-      state.messages = [];
-      applySnapshot(await res.json());
-    }
-
     function openSettings() {
       state.form = { ...state.agent.settings };
       state.settings.error = null;
@@ -866,7 +844,7 @@ const app = createApp({
       ...toRefs(state), thread, input,
       stateLabel, stateTone, moodLabel, logNewestFirst, reasoning, turnTitle, logTone,
       markdown, fmt, seconds, time, plural, accusative, instrumental,
-      send, autosize, forget, openSettings, closeSettings, applyPreset, saveSettings,
+      send, autosize, openSettings, closeSettings, applyPreset, saveSettings,
     };
   },
 });
