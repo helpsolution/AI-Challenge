@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Advent — агент с памятью</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  /* Локальный CSS — только раскладка страницы и чат: этого в дизайн-системе нет. */
+  [v-cloak] { display: none; }
+
+  .page { width: 100%; max-width: 900px; margin-inline: auto; padding-inline: var(--space-6); }
+  .page-body { padding-block: var(--space-6) var(--space-10); }
+  .icon { width: 18px; height: 18px; stroke-width: 1.75; }
+  .nav { gap: var(--space-3); }
+  @media (max-width: 720px) {
+    .page { padding-inline: var(--space-4); }
+    .nav-stack { display: none; }
+  }
+
+  /* ---- Чат: шапка, лента, поле ввода — на всю доступную высоту ---- */
+  .chat { padding: 0; gap: 0; height: calc(100vh - 64px - var(--space-6) - var(--space-10)); min-height: 540px; }
+  .chat-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: center;
+               padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-border); }
+  .chat-who { display: grid; gap: 2px; min-width: 0; }
+  .chat-name { margin: 0; }
+  .thread { flex: 1; overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+  .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: end;
+              padding: var(--space-4) var(--space-5); border-top: 1px solid var(--color-border); }
+  .composer .textarea { height: auto; min-height: 44px; max-height: 180px; resize: none; padding-block: 10px; }
+  @media (max-width: 720px) { .chat { height: auto; min-height: 0; } .thread { max-height: 62vh; } }
+
+  .empty { margin: auto; text-align: center; max-width: 36ch; color: var(--color-text-muted); }
+  .empty p { margin: var(--space-2) 0 0; }
+
+  .msg { max-width: 82%; display: grid; gap: var(--space-1); }
+  .msg[data-role="USER"] { align-self: flex-end; }
+  .msg[data-role="ASSISTANT"], .msg[data-role="ERROR"] { align-self: flex-start; }
+  .msg-meta { display: flex; gap: var(--space-2); align-items: baseline; font-size: 0.75rem; color: var(--color-text-muted); }
+  .msg[data-role="USER"] .msg-meta { justify-content: flex-end; }
+  .msg-meta .who { font-weight: 500; color: var(--color-text-secondary); }
+  .msg-meta .when { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .bubble { padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg); border: 1px solid var(--color-border);
+            font-size: 0.9375rem; line-height: 1.55; color: var(--color-text-primary); overflow-wrap: break-word; }
+  .msg[data-role="USER"] .bubble { background: var(--color-elevated); border-color: var(--color-border-strong);
+                                   white-space: pre-wrap; border-bottom-right-radius: var(--radius-sm); }
+  .msg[data-role="ASSISTANT"] .bubble { background: var(--color-surface); border-bottom-left-radius: var(--radius-sm); }
+  .msg[data-role="ERROR"] .bubble { background: var(--color-surface); border-color: var(--color-danger); color: var(--color-danger);
+                                    font-size: 0.8125rem; display: flex; gap: var(--space-2); align-items: flex-start; }
+  .msg[data-role="ERROR"] .icon { flex: none; margin-top: 2px; }
+  .msg.is-pending .bubble { opacity: 0.65; }
+
+  /* Ответ модели — markdown в минимальном объёме. */
+  .bubble p { margin: 0 0 var(--space-3); }
+  .bubble > :last-child { margin-bottom: 0; }
+  .bubble h4 { font-family: var(--font-display); font-size: 1rem; font-weight: 600; margin: var(--space-3) 0 var(--space-2); }
+  .bubble ul, .bubble ol { margin: 0 0 var(--space-3); padding-left: var(--space-5); }
+  .bubble li { margin-bottom: var(--space-1); }
+  .bubble hr { height: 1px; border: 0; background: var(--color-border); margin: var(--space-4) 0; }
+  .bubble strong { font-weight: 600; }
+  .bubble em { color: var(--color-text-secondary); }
+  .bubble code { font-family: var(--font-mono); font-size: 0.875em; background: var(--color-elevated);
+                 border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 1px 4px; }
+  .bubble pre { margin: 0 0 var(--space-3); padding: var(--space-3); overflow: auto; background: var(--color-elevated);
+                border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: var(--font-mono);
+                font-size: 0.8125rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+
+  .typing { display: inline-flex; gap: 4px; align-items: center; height: 1.4em; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--color-text-muted); animation: typing 1.2s infinite ease-in-out; }
+  .typing i:nth-child(2) { animation-delay: .2s; }
+  .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes typing { 0%, 80%, 100% { transform: translateY(0); opacity: .4; } 40% { transform: translateY(-4px); opacity: 1; } }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <nav class="nav page">
+    <span class="nav-brand">
+      <span class="nav-brand-mark" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5c.67 0 1.35.09 2 .26 1.78-2 5.03-2.84 6.42-2.26 1.4.58-.42 7-.42 7 .57 1.07 1 2.24 1 3.44C21 17.9 16.97 21 12 21s-9-3-9-7.56c0-1.25.5-2.4 1-3.44 0 0-1.89-6.42-.5-7 1.39-.58 4.72.23 6.5 2.23A9.04 9.04 0 0 1 12 5Z"/>
+          <path d="M8 14v.5"/><path d="M16 14v.5"/><path d="M11.25 16.25h1.5L12 17l-.75-.75Z"/>
+        </svg>
+      </span>
+      AI Advent
+    </span>
+    <span class="chip nav-stack" data-tone="neutral">Kotlin · Spring Boot · SQLite · DeepSeek</span>
+  </nav>
+
+  <main class="page page-body" v-if="agent">
+    <section class="card chat">
+
+      <header class="chat-head">
+        <span class="chat-who">
+          <h1 class="t-title-md chat-name">{{ agent.name }}</h1>
+          <span class="t-body-sm t-muted">{{ memoryLine }}</span>
+        </span>
+        <button class="btn btn-secondary btn-sm" @click="forget" :disabled="sending || !messages.length">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 6h18"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+          </svg>
+          Забыть всё
+        </button>
+      </header>
+
+      <div class="thread" ref="thread">
+        <div class="empty" v-if="!messages.length && !sending">
+          <p class="t-body-md">Диалог пуст.</p>
+          <p class="t-body-sm">Напишите что-нибудь — например, как вас зовут. Потом перезапустите
+             приложение и спросите снова: {{ accusative(agent.name) }} это не собьёт.</p>
+        </div>
+
+        <article class="msg" v-for="(m, i) in messages" :key="i" :data-role="m.role" :class="{ 'is-pending': m.pending }">
+          <div class="msg-meta">
+            <span class="who">{{ m.role === 'USER' ? 'Вы' : agent.name }}</span>
+            <span class="when">{{ time(m.at) }}</span>
+          </div>
+          <div class="bubble" v-if="m.role === 'ASSISTANT'" v-html="markdown(m.content)"></div>
+          <div class="bubble" v-else>{{ m.content }}</div>
+        </article>
+
+        <article class="msg" data-role="ASSISTANT" v-if="sending">
+          <div class="msg-meta"><span class="who">{{ agent.name }}</span></div>
+          <div class="bubble"><span class="typing" aria-label="печатает"><i></i><i></i><i></i></span></div>
+        </article>
+
+        <article class="msg" data-role="ERROR" v-if="error">
+          <div class="bubble">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/>
+            </svg>
+            <span>{{ error }} Ход не сохранён — история осталась такой же, как была.</span>
+          </div>
+        </article>
+      </div>
+
+      <form class="composer" @submit.prevent="send">
+        <div class="field">
+          <textarea class="textarea" ref="input" v-model="draft" rows="1" aria-label="Сообщение"
+                    placeholder="Написать сообщение…" :disabled="sending"
+                    @keydown.enter.exact.prevent="send" @input="grow"></textarea>
+        </div>
+        <button class="btn btn-primary" type="submit" :disabled="sending || !draft.trim()">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7Z"/>
+          </svg>
+          Отправить
+        </button>
+      </form>
+
+    </section>
+  </main>
+
+  <main class="page page-body" v-else>
+    <p class="t-body-md t-muted">Загружаю диалог…</p>
+  </main>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, reactive, ref, computed, nextTick, onMounted } = Vue;
+
+/* ---------- markdown: минимальный рендерер, весь текст экранируется до разметки ---------- */
+const ESCAPE = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const escapeHtml = (text) => text.replace(/[&<>"']/g, c => ESCAPE[c]);
+
+function inlineMd(text) {
+  return text
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[\s(«"'])\*([^*\n]+)\*/gm, '$1<em>$2</em>')
+    .replace(/(^|[\s(«"'])_([^_\n]+)_/gm, '$1<em>$2</em>');
+}
+
+function blocksMd(text) {
+  const out = [];
+  let list = null;
+  let para = [];
+  const flushList = () => {
+    if (!list) return;
+    const start = list.tag === 'ol' && list.start !== 1 ? ` start="${list.start}"` : '';
+    out.push(`<${list.tag}${start}>${list.items.map(i => `<li>${i}</li>`).join('')}</${list.tag}>`);
+    list = null;
+  };
+  const flushPara = () => {
+    if (!para.length) return;
+    out.push(`<p>${para.join('<br>')}</p>`);
+    para = [];
+  };
+  for (const raw of text.split('\n')) {
+    const line = raw.trimEnd();
+    if (!line.trim()) { flushList(); flushPara(); continue; }
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) { flushList(); flushPara(); out.push(`<h4>${inlineMd(heading[1])}</h4>`); continue; }
+    if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line)) { flushList(); flushPara(); out.push('<hr>'); continue; }
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
+    const numbered = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+    if (bullet || numbered) {
+      flushPara();
+      const tag = bullet ? 'ul' : 'ol';
+      const start = numbered ? Number(numbered[1]) : 1;
+      if (!list || list.tag !== tag) { flushList(); list = { tag, start, items: [] }; }
+      list.items.push(inlineMd(bullet ? bullet[1] : numbered[2]));
+      continue;
+    }
+    flushList();
+    para.push(inlineMd(line));
+  }
+  flushList();
+  flushPara();
+  return out.join('');
+}
+
+function markdown(text) {
+  return escapeHtml(text ?? '')
+    .split('```')
+    .map((part, i) => i % 2
+      ? `<pre>${part.replace(/^[\w-]*\r?\n/, '').replace(/\s+$/, '')}</pre>`
+      : blocksMd(part))
+    .join('');
+}
+
+/* ---------- мелкие помощники ---------- */
+const time = (iso) => iso ? new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
+
+function plural(n, one, few, many) {
+  const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return many;
+  if (b > 1 && b < 5) return few;
+  if (b === 1) return one;
+  return many;
+}
+
+/** Имя агента стоит в тексте в винительном падеже: «это не собьёт Барсика». */
+function accusative(name) {
+  if (/[бвгджзйклмнпрстфхцчшщь]$/i.test(name)) return name.replace(/ь$/i, '') + 'а';
+  if (/а$/i.test(name)) return name.slice(0, -1) + 'у';
+  if (/я$/i.test(name)) return name.slice(0, -1) + 'ю';
+  return name;
+}
+
+createApp({
+  setup() {
+    const agent = ref(null);
+    const messages = reactive([]);
+    const draft = ref('');
+    const sending = ref(false);
+    const error = ref('');
+    const thread = ref(null);
+    const input = ref(null);
+
+    const memoryLine = computed(() => {
+      const n = agent.value?.remembered ?? 0;
+      if (!n) return `${agent.value.model} · история пуста`;
+      return `${agent.value.model} · в памяти ${n} ${plural(n, 'сообщение', 'сообщения', 'сообщений')}`;
+    });
+
+    async function scrollDown() {
+      await nextTick();
+      const box = thread.value;
+      if (box) box.scrollTop = box.scrollHeight;
+    }
+
+    function grow() {
+      const box = input.value;
+      if (!box) return;
+      box.style.height = 'auto';
+      box.style.height = `${Math.min(box.scrollHeight, 180)}px`;
+    }
+
+    function apply(view) {
+      agent.value = view.agent;
+      messages.splice(0, messages.length, ...view.messages);
+    }
+
+    async function load() {
+      const res = await fetch('/api/chat');
+      apply(await res.json());
+      await scrollDown();
+    }
+
+    async function send() {
+      const text = draft.value.trim();
+      if (!text || sending.value) return;
+
+      error.value = '';
+      draft.value = '';
+      grow();
+
+      // Показываем вопрос сразу, но помечаем его незавершённым: сохранён он будет
+      // только вместе с ответом.
+      const pending = reactive({ role: 'USER', content: text, at: new Date().toISOString(), pending: true });
+      messages.push(pending);
+      sending.value = true;
+      await scrollDown();
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Сервер ответил ${res.status}`);
+        pending.pending = false;
+        messages.push(data.answer);
+        agent.value = { ...agent.value, remembered: data.remembered };
+      } catch (e) {
+        // Ход не состоялся: в базе не изменилось ничего, значит и в ленте его быть не должно.
+        // Текст возвращаем в поле — переспрашивать заново не придётся.
+        messages.splice(messages.indexOf(pending), 1);
+        draft.value = text;
+        error.value = e.message;
+      } finally {
+        sending.value = false;
+        await scrollDown();
+        grow();
+      }
+    }
+
+    async function forget() {
+      if (!confirm('Стереть всю переписку? Агент забудет разговор безвозвратно.')) return;
+      error.value = '';
+      const res = await fetch('/api/chat', { method: 'DELETE' });
+      apply(await res.json());
+    }
+
+    onMounted(load);
+
+    return { agent, messages, draft, sending, error, thread, input, memoryLine, send, forget, grow, markdown, time, accusative };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
