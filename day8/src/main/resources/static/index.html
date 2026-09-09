@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Advent — агент и его токены</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  /* Локальный CSS — только раскладка страницы и чат: этого в дизайн-системе нет. */
+  [v-cloak] { display: none; }
+
+  .page { width: 100%; max-width: 1280px; margin-inline: auto; padding-inline: var(--space-6); }
+  .page-body { padding-block: var(--space-6) var(--space-10); }
+  .icon { width: 18px; height: 18px; stroke-width: 1.75; }
+
+  /* Две колонки: диалог и его цена рядом — иначе рост токенов не связать с ходом. */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--space-6); align-items: start; }
+  @media (max-width: 1080px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  .nav { gap: var(--space-3); }
+  @media (max-width: 720px) {
+    .page { padding-inline: var(--space-4); }
+    .nav-stack { display: none; }
+  }
+
+  /* ---- Чат: шапка, лента, поле ввода — на всю доступную высоту ---- */
+  .chat { padding: 0; gap: 0; height: calc(100vh - 64px - var(--space-6) - var(--space-10)); min-height: 540px; }
+  .chat-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: center;
+               padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-border); }
+  .chat-who { display: grid; gap: 2px; min-width: 0; }
+  .chat-name { margin: 0; }
+  .thread { flex: 1; overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+  .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: end;
+              padding: var(--space-4) var(--space-5); border-top: 1px solid var(--color-border); }
+  .composer .textarea { height: auto; min-height: 44px; max-height: 180px; resize: none; padding-block: 10px; }
+  @media (max-width: 720px) { .chat { height: auto; min-height: 0; } .thread { max-height: 62vh; } }
+
+  .empty { margin: auto; text-align: center; max-width: 36ch; color: var(--color-text-muted); }
+  .empty p { margin: var(--space-2) 0 0; }
+
+  .msg { max-width: 82%; display: grid; gap: var(--space-1); }
+  .msg[data-role="USER"] { align-self: flex-end; }
+  .msg[data-role="ASSISTANT"], .msg[data-role="ERROR"] { align-self: flex-start; }
+  .msg-meta { display: flex; gap: var(--space-2); align-items: baseline; font-size: 0.75rem; color: var(--color-text-muted); }
+  .msg[data-role="USER"] .msg-meta { justify-content: flex-end; }
+  .msg-meta .who { font-weight: 500; color: var(--color-text-secondary); }
+  .msg-meta .when { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .bubble { padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg); border: 1px solid var(--color-border);
+            font-size: 0.9375rem; line-height: 1.55; color: var(--color-text-primary); overflow-wrap: break-word; }
+  .msg[data-role="USER"] .bubble { background: var(--color-elevated); border-color: var(--color-border-strong);
+                                   white-space: pre-wrap; border-bottom-right-radius: var(--radius-sm); }
+  .msg[data-role="ASSISTANT"] .bubble { background: var(--color-surface); border-bottom-left-radius: var(--radius-sm); }
+  .msg[data-role="ERROR"] .bubble { background: var(--color-surface); border-color: var(--color-danger); color: var(--color-danger);
+                                    font-size: 0.8125rem; display: flex; gap: var(--space-2); align-items: flex-start; }
+  .msg[data-role="ERROR"] .icon { flex: none; margin-top: 2px; }
+  .msg.is-pending .bubble { opacity: 0.65; }
+
+  /* Ответ модели — markdown в минимальном объёме. */
+  .bubble p { margin: 0 0 var(--space-3); }
+  .bubble > :last-child { margin-bottom: 0; }
+  .bubble h4 { font-family: var(--font-display); font-size: 1rem; font-weight: 600; margin: var(--space-3) 0 var(--space-2); }
+  .bubble ul, .bubble ol { margin: 0 0 var(--space-3); padding-left: var(--space-5); }
+  .bubble li { margin-bottom: var(--space-1); }
+  .bubble hr { height: 1px; border: 0; background: var(--color-border); margin: var(--space-4) 0; }
+  .bubble strong { font-weight: 600; }
+  .bubble em { color: var(--color-text-secondary); }
+  .bubble code { font-family: var(--font-mono); font-size: 0.875em; background: var(--color-elevated);
+                 border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 1px 4px; }
+  .bubble pre { margin: 0 0 var(--space-3); padding: var(--space-3); overflow: auto; background: var(--color-elevated);
+                border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: var(--font-mono);
+                font-size: 0.8125rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+
+  .typing { display: inline-flex; gap: 4px; align-items: center; height: 1.4em; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--color-text-muted); animation: typing 1.2s infinite ease-in-out; }
+  .typing i:nth-child(2) { animation-delay: .2s; }
+  .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes typing { 0%, 80%, 100% { transform: translateY(0); opacity: .4; } 40% { transform: translateY(-4px); opacity: 1; } }
+
+  /* ---- Панель расхода: шкала, числа, график ---- */
+  .panel { padding: 0; gap: 0; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+                padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-border); }
+  .panel-body { padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); }
+  .panel-section { display: flex; flex-direction: column; gap: var(--space-2); }
+  .panel-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+  .panel-note { margin: 0; font-size: 0.75rem; line-height: 1.5; color: var(--color-text-muted); }
+
+  /* Шкала заполнения контекста. Один цвет данных, тон меняется только на порогах —
+     и всегда вместе с текстом рядом, а не цветом в одиночку. */
+  .meter { position: relative; height: 8px; border-radius: var(--radius-full);
+           background: var(--color-elevated); border: 1px solid var(--color-border); overflow: hidden; }
+  .meter-fill { display: block; height: 100%; border-radius: var(--radius-full);
+                background: var(--color-info); transition: width var(--motion-base) var(--easing-standard); }
+  .meter[data-tone="warning"] .meter-fill { background: var(--color-warning); }
+  .meter[data-tone="danger"] .meter-fill { background: var(--color-danger); }
+
+  /* Числа задания: вход, ответ, диалог целиком, деньги. Моно и в колонку. */
+  .nums { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--color-border);
+          border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; }
+  .num { background: var(--color-surface); padding: var(--space-3) var(--space-4); display: grid; gap: 2px; }
+  .num-label { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); }
+  .num-value { font-family: var(--font-mono); font-size: 1.125rem; font-weight: 600;
+               font-variant-numeric: tabular-nums; color: var(--color-text-primary); }
+  .num-hint { font-size: 0.6875rem; color: var(--color-text-muted); font-family: var(--font-mono); }
+
+  .chart-wrap { position: relative; }
+  .chart { display: block; width: 100%; height: auto; overflow: visible; }
+  .chart-bar { fill: var(--color-info); }
+  .chart-bar[data-state="compressed"] { fill: var(--color-warning); }
+  .chart-bar:hover { fill: var(--color-info); filter: brightness(1.35); }
+  .chart-fail { stroke: var(--color-danger); stroke-width: 1.5; stroke-linecap: round; }
+  .chart-limit { stroke: var(--color-danger); stroke-width: 1; stroke-dasharray: 3 3; }
+  .chart-prompt-room { stroke: var(--color-text-muted); stroke-width: 1; stroke-dasharray: 2 4; }
+  .chart-axis { stroke: var(--color-border-strong); stroke-width: 1; }
+  .chart-label { font-family: var(--font-mono); font-size: 8px; fill: var(--color-text-muted); }
+  .chart-hit { fill: transparent; cursor: default; }
+
+  /* Подсказка по ходу. Появляется по наведению: без неё точные числа пришлось бы
+     угадывать по высоте столбика. */
+  .tip { position: absolute; z-index: 2; pointer-events: none; min-width: 150px; padding: var(--space-2) var(--space-3);
+         background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);
+         box-shadow: var(--shadow-md, 0 4px 12px rgba(15, 18, 25, 0.12)); font-size: 0.75rem; line-height: 1.5; }
+  .tip dl { display: grid; grid-template-columns: auto auto; gap: 1px var(--space-3); margin: var(--space-1) 0 0; }
+  .tip dt { color: var(--color-text-muted); }
+  .tip dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+  .tip-title { font-weight: 600; color: var(--color-text-primary); }
+
+  .spark { display: block; width: 100%; height: 36px; overflow: visible; }
+  .spark-line { fill: none; stroke: var(--color-info); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+
+  /* Таблица ходов: те же числа, что на графике, но читаемые точно. Свёрнута по умолчанию. */
+  .turns-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+  .turns-table th { text-align: right; font-weight: 500; color: var(--color-text-muted); padding: 4px 6px;
+                    border-bottom: 1px solid var(--color-border); }
+  .turns-table th:first-child, .turns-table td:first-child { text-align: left; }
+  .turns-table td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--color-border-soft);
+                    font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .turns-table tr[data-failed="true"] td { color: var(--color-danger); }
+  .turns-scroll { max-height: 220px; overflow: auto; }
+  .details-summary { cursor: pointer; font-size: 0.75rem; color: var(--color-text-secondary); }
+
+  /* Сырое тело ответа провайдера в сообщении об ошибке. */
+  .raw { margin: var(--space-2) 0 0; max-height: 180px; overflow: auto; font-family: var(--font-mono);
+         font-size: 0.6875rem; line-height: 1.5; white-space: pre-wrap; word-break: break-all;
+         color: var(--color-text-secondary); background: var(--color-elevated);
+         border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-2); }
+  .msg[data-role="ERROR"] .bubble { display: block; }
+  .err-head { display: flex; gap: var(--space-2); align-items: flex-start; }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <nav class="nav page">
+    <span class="nav-brand">
+      <span class="nav-brand-mark" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5c.67 0 1.35.09 2 .26 1.78-2 5.03-2.84 6.42-2.26 1.4.58-.42 7-.42 7 .57 1.07 1 2.24 1 3.44C21 17.9 16.97 21 12 21s-9-3-9-7.56c0-1.25.5-2.4 1-3.44 0 0-1.89-6.42-.5-7 1.39-.58 4.72.23 6.5 2.23A9.04 9.04 0 0 1 12 5Z"/>
+          <path d="M8 14v.5"/><path d="M16 14v.5"/><path d="M11.25 16.25h1.5L12 17l-.75-.75Z"/>
+        </svg>
+      </span>
+      AI Advent
+    </span>
+    <span class="chip nav-stack" data-tone="neutral">Kotlin · Spring Boot · SQLite · OpenRouter</span>
+  </nav>
+
+  <main class="page page-body" v-if="agent">
+   <div class="layout">
+    <section class="card chat">
+
+      <header class="chat-head">
+        <span class="chat-who">
+          <h1 class="t-title-md chat-name">{{ agent.name }}</h1>
+          <span class="t-body-sm t-muted">{{ memoryLine }}</span>
+        </span>
+        <button class="btn btn-secondary btn-sm" @click="forget" :disabled="sending || !messages.length">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 6h18"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+          </svg>
+          Забыть всё
+        </button>
+      </header>
+
+      <div class="thread" ref="thread">
+        <div class="empty" v-if="!messages.length && !sending">
+          <p class="t-body-md">Диалог пуст.</p>
+          <p class="t-body-sm">Напишите что-нибудь и следите за панелью справа: история уходит
+             модели целиком на каждом ходу, поэтому запрос растёт с каждым сообщением.
+             У этой модели под промпт всего {{ fmt(agent.contextForPrompt) }} токенов —
+             десяток ходов, и {{ accusative(agent.name) }} упрётся в лимит.</p>
+        </div>
+
+        <article class="msg" v-for="(m, i) in messages" :key="i" :data-role="m.role" :class="{ 'is-pending': m.pending }">
+          <div class="msg-meta">
+            <span class="who">{{ m.role === 'USER' ? 'Вы' : agent.name }}</span>
+            <span class="when">{{ time(m.at) }}</span>
+          </div>
+          <div class="bubble" v-if="m.role === 'ASSISTANT'" v-html="markdown(m.content)"></div>
+          <div class="bubble" v-else>{{ m.content }}</div>
+        </article>
+
+        <article class="msg" data-role="ASSISTANT" v-if="sending">
+          <div class="msg-meta"><span class="who">{{ agent.name }}</span></div>
+          <div class="bubble"><span class="typing" aria-label="печатает"><i></i><i></i><i></i></span></div>
+        </article>
+
+        <article class="msg" data-role="ERROR" v-if="error">
+          <div class="bubble">
+            <div class="err-head">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/>
+              </svg>
+              <span>
+                <strong v-if="errorStatus">Провайдер ответил {{ errorStatus }}.</strong>
+                {{ error }}
+                Переписка не изменилась, но ход записан в расход — он виден на графике.
+              </span>
+            </div>
+            <!-- Тело ответа провайдера дословно: в этот день именно в нём написано,
+                 каков лимит модели и на сколько мы его перебрали. -->
+            <details v-if="errorBody">
+              <summary class="details-summary">Ответ провайдера целиком</summary>
+              <pre class="raw">{{ errorBody }}</pre>
+            </details>
+          </div>
+        </article>
+      </div>
+
+      <form class="composer" @submit.prevent="send">
+        <div class="field">
+          <textarea class="textarea" ref="input" v-model="draft" rows="1" aria-label="Сообщение"
+                    placeholder="Написать сообщение…" :disabled="sending"
+                    @keydown.enter.exact.prevent="send" @input="grow"></textarea>
+        </div>
+        <button class="btn btn-primary" type="submit" :disabled="sending || !draft.trim()">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7Z"/>
+          </svg>
+          Отправить
+        </button>
+      </form>
+
+    </section>
+
+    <!-- ===== Панель расхода: то, что этот день добавляет к дню 7 ===== -->
+    <aside class="card panel">
+      <header class="panel-head">
+        <h2 class="t-title-sm" style="margin: 0">Токены</h2>
+        <span class="chip" data-tone="neutral">{{ short(agent.model) }}</span>
+      </header>
+
+      <div class="panel-body">
+
+        <!-- Шкала: сколько контекста занял последний запрос. Лимит модели считается
+             вместе с ответом, поэтому под промпт остаётся меньше, и на шкале это видно. -->
+        <section class="panel-section">
+          <div class="panel-row">
+            <span class="num-label">Контекст под промпт</span>
+            <span class="t-mono-sm">{{ fmt(lastPrompt) }} / {{ fmt(agent.contextForPrompt) }}</span>
+          </div>
+          <div class="meter" :data-tone="fillTone" role="img"
+               :aria-label="`Запрос занял ${fillPercent}% контекста, отведённого под промпт`">
+            <i class="meter-fill" :style="{ width: Math.min(fillPercent, 100) + '%' }"></i>
+          </div>
+          <p class="panel-note">
+            {{ fillPercent }}% контекста под промпт. Лимит модели {{ fmt(agent.contextLimit) }},
+            из них {{ fmt(agent.maxTokens) }} зарезервировано под ответ.
+          </p>
+          <!-- Оговорка не из осторожности, а по замеру: агрегатор отклонил запрос,
+               когда эта шкала показывала 60%. Он проверяет лимит своей оценкой
+               токенов, а счёт выставляет площадка — это разные числа. -->
+          <p class="panel-note">
+            Шкала — по счёту площадки, который приходит вместе с ответом. Лимит
+            агрегатор проверяет своей оценкой, а она на русском тексте выше, поэтому
+            отказ приходит раньше, чем шкала дойдёт до конца.
+          </p>
+        </section>
+
+        <!-- Три числа, которые просит задание, плюс деньги. Все — от провайдера,
+             ни одно не оценка: своего токенизатора в приложении нет. -->
+        <section class="nums">
+          <div class="num">
+            <span class="num-label">Запрос</span>
+            <span class="num-value">{{ fmt(lastTurn?.promptTokens) }}</span>
+            <span class="num-hint">{{ lastDelta }}</span>
+          </div>
+          <div class="num">
+            <span class="num-label">Ответ</span>
+            <span class="num-value">{{ fmt(lastTurn?.completionTokens) }}</span>
+            <span class="num-hint">{{ lastTurn?.finishReason || '—' }}</span>
+          </div>
+          <div class="num">
+            <span class="num-label">Весь диалог</span>
+            <span class="num-value">{{ totals.turns ? fmt(totals.totalTokens) : '—' }}</span>
+            <span class="num-hint">{{ totals.turns }} {{ plural(totals.turns, 'ход', 'хода', 'ходов') }}</span>
+          </div>
+          <div class="num">
+            <span class="num-label">Цена диалога</span>
+            <span class="num-value">{{ money(totals.costUsd) }}</span>
+            <span class="num-hint">{{ costHint }}</span>
+          </div>
+        </section>
+
+        <!-- Рост запроса по ходам. Один ряд данных и подписанная линия лимита:
+             двух шкал на одном графике не бывает, а деньги идут отдельно ниже. -->
+        <section class="panel-section" v-if="turns.length">
+          <div class="panel-row">
+            <span class="num-label">Токены запроса по ходам</span>
+            <span class="panel-note">ось до {{ fmt(chart.yMax) }}</span>
+          </div>
+          <div class="chart-wrap" @mouseleave="hover = null">
+            <svg class="chart" :viewBox="`0 0 ${chart.width} ${chart.height}`" role="img"
+                 aria-label="Столбиковая диаграмма: сколько токенов занимал запрос на каждом ходу">
+              <!-- Верхняя граница оси: подстройка масштаба всегда подписана числом. -->
+              <text class="chart-label" x="0" y="8">{{ fmt(chart.yMax) }}</text>
+              <template v-if="chart.limitY !== null">
+                <line class="chart-limit" :x1="0" :x2="chart.width" :y1="chart.limitY" :y2="chart.limitY"/>
+                <text class="chart-label" :x="chart.width" :y="chart.limitY - 3" text-anchor="end">
+                  лимит {{ fmt(agent.contextLimit) }}
+                </text>
+              </template>
+              <template v-if="chart.roomY !== null">
+                <line class="chart-prompt-room" :x1="0" :x2="chart.width" :y1="chart.roomY" :y2="chart.roomY"/>
+                <text class="chart-label" x="0" :y="chart.roomY - 3">
+                  под промпт {{ fmt(agent.contextForPrompt) }}
+                </text>
+              </template>
+
+              <g v-for="b in chart.bars" :key="b.number">
+                <rect v-if="!b.failed" class="chart-bar" :data-state="b.compressed ? 'compressed' : 'ok'"
+                      :x="b.x" :y="b.y" :width="b.w" :height="b.h" rx="2"/>
+                <g v-else class="chart-fail" :transform="`translate(${b.x + b.w / 2}, ${chart.baseY - 5})`">
+                  <line x1="-3.5" y1="-3.5" x2="3.5" y2="3.5"/><line x1="-3.5" y1="3.5" x2="3.5" y2="-3.5"/>
+                </g>
+                <!-- Прозрачная область наведения шире столбика: попасть в 6 пикселей мышью трудно. -->
+                <rect class="chart-hit" :x="b.x - 1" y="0" :width="b.w + 2" :height="chart.height"
+                      @mouseenter="hover = b"><title>{{ b.title }}</title></rect>
+              </g>
+              <line class="chart-axis" :x1="0" :x2="chart.width" :y1="chart.baseY" :y2="chart.baseY"/>
+            </svg>
+            <div class="tip" v-if="hover" :style="tipStyle">
+              <span class="tip-title">Ход {{ hover.number }}</span>
+              <dl>
+                <dt>запрос</dt><dd>{{ fmt(hover.turn.promptTokens) }}</dd>
+                <dt>ответ</dt><dd>{{ fmt(hover.turn.completionTokens) }}</dd>
+                <dt>цена</dt><dd>{{ money(hover.turn.costUsd) }}</dd>
+                <dt>задержка</dt><dd>{{ (hover.turn.latencyMs / 1000).toFixed(1) }} с</dd>
+                <dt v-if="hover.turn.charsPerToken">симв./токен</dt>
+                <dd v-if="hover.turn.charsPerToken">{{ hover.turn.charsPerToken.toFixed(1) }}</dd>
+              </dl>
+              <p class="panel-note" v-if="hover.failed">Ход не удался: {{ hover.turn.error }}</p>
+              <p class="panel-note" v-else-if="hover.compressed">Промпт дошёл урезанным.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Деньги — отдельным графиком, а не второй осью на предыдущем. -->
+        <section class="panel-section" v-if="spark.points">
+          <div class="panel-row">
+            <span class="num-label">Накопленная цена</span>
+            <span class="t-mono-sm">{{ money(totals.costUsd) }}</span>
+          </div>
+          <svg class="spark" viewBox="0 0 100 36" preserveAspectRatio="none" role="img"
+               :aria-label="`Накопленная цена диалога дошла до ${money(totals.costUsd)}`">
+            <polyline class="spark-line" :points="spark.points" vector-effect="non-scaling-stroke"/>
+          </svg>
+        </section>
+
+        <!-- Предупреждения: сигнальный цвет всегда с текстом, никогда цветом в одиночку. -->
+        <section class="panel-section" v-if="totals.compressedTurns || totals.failedTurns">
+          <span class="chip" data-tone="warning" v-if="totals.compressedTurns">
+            {{ totals.compressedTurns }} {{ plural(totals.compressedTurns, 'ход', 'хода', 'ходов') }} урезано молча
+          </span>
+          <span class="chip" data-tone="danger" v-if="totals.failedTurns">
+            {{ totals.failedTurns }} {{ plural(totals.failedTurns, 'ход', 'хода', 'ходов') }} упало с ошибкой
+          </span>
+          <p class="panel-note" v-if="totals.compressedTurns">
+            Провайдер сжал промпт: история выросла, а токенов в запросе не прибавилось.
+            Ответ пришёл без ошибки, но часть разговора модель не увидела.
+          </p>
+        </section>
+
+        <!-- Те же числа, читаемые точно: график показывает форму, таблица — значения. -->
+        <details v-if="turns.length">
+          <summary class="details-summary">Таблица ходов</summary>
+          <div class="turns-scroll">
+            <table class="turns-table">
+              <thead>
+                <tr><th>Ход</th><th>Запрос</th><th>Ответ</th><th>Цена</th><th>мс</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="t in turns" :key="t.number" :data-failed="!!t.error">
+                  <td>{{ t.number }}</td>
+                  <td>{{ t.error ? '—' : fmt(t.promptTokens) }}</td>
+                  <td>{{ t.error ? '—' : fmt(t.completionTokens) }}</td>
+                  <td>{{ t.error ? '—' : money(t.costUsd) }}</td>
+                  <td>{{ t.latencyMs }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+      </div>
+    </aside>
+   </div>
+  </main>
+
+  <main class="page page-body" v-else>
+    <p class="t-body-md t-muted">Загружаю диалог…</p>
+  </main>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, reactive, ref, computed, nextTick, onMounted } = Vue;
+
+/* ---------- markdown: минимальный рендерер, весь текст экранируется до разметки ---------- */
+const ESCAPE = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const escapeHtml = (text) => text.replace(/[&<>"']/g, c => ESCAPE[c]);
+
+function inlineMd(text) {
+  return text
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[\s(«"'])\*([^*\n]+)\*/gm, '$1<em>$2</em>')
+    .replace(/(^|[\s(«"'])_([^_\n]+)_/gm, '$1<em>$2</em>');
+}
+
+function blocksMd(text) {
+  const out = [];
+  let list = null;
+  let para = [];
+  const flushList = () => {
+    if (!list) return;
+    const start = list.tag === 'ol' && list.start !== 1 ? ` start="${list.start}"` : '';
+    out.push(`<${list.tag}${start}>${list.items.map(i => `<li>${i}</li>`).join('')}</${list.tag}>`);
+    list = null;
+  };
+  const flushPara = () => {
+    if (!para.length) return;
+    out.push(`<p>${para.join('<br>')}</p>`);
+    para = [];
+  };
+  for (const raw of text.split('\n')) {
+    const line = raw.trimEnd();
+    if (!line.trim()) { flushList(); flushPara(); continue; }
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) { flushList(); flushPara(); out.push(`<h4>${inlineMd(heading[1])}</h4>`); continue; }
+    if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line)) { flushList(); flushPara(); out.push('<hr>'); continue; }
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
+    const numbered = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+    if (bullet || numbered) {
+      flushPara();
+      const tag = bullet ? 'ul' : 'ol';
+      const start = numbered ? Number(numbered[1]) : 1;
+      if (!list || list.tag !== tag) { flushList(); list = { tag, start, items: [] }; }
+      list.items.push(inlineMd(bullet ? bullet[1] : numbered[2]));
+      continue;
+    }
+    flushList();
+    para.push(inlineMd(line));
+  }
+  flushList();
+  flushPara();
+  return out.join('');
+}
+
+function markdown(text) {
+  return escapeHtml(text ?? '')
+    .split('```')
+    .map((part, i) => i % 2
+      ? `<pre>${part.replace(/^[\w-]*\r?\n/, '').replace(/\s+$/, '')}</pre>`
+      : blocksMd(part))
+    .join('');
+}
+
+/* ---------- мелкие помощники ---------- */
+const time = (iso) => iso ? new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
+
+function plural(n, one, few, many) {
+  const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return many;
+  if (b > 1 && b < 5) return few;
+  if (b === 1) return one;
+  return many;
+}
+
+/** Числа выравниваются в колонку, поэтому разряды разделяются узким пробелом. */
+const fmt = (n) => (n === null || n === undefined) ? '—' : n.toLocaleString('ru-RU').replace(/\u00A0/g, '\u2009');
+
+/**
+ * Деньги за один ход — это доли цента, и обычные два знака после точки превратили бы
+ * их в ноль. Поэтому число знаков зависит от порядка суммы.
+ */
+function money(usd) {
+  if (usd === null || usd === undefined) return '—';
+  if (usd === 0) return '$0';
+  if (usd < 0.01) return '$' + usd.toFixed(6).replace(/0+$/, '');
+  if (usd < 1) return '$' + usd.toFixed(4);
+  return '$' + usd.toFixed(2);
+}
+
+/** В шапке панели нужна модель, а не её путь у провайдера. */
+const short = (model) => model.includes('/') ? model.split('/').pop() : model;
+
+/** Имя агента стоит в тексте в винительном падеже: «это не собьёт Барсика». */
+function accusative(name) {
+  if (/[бвгджзйклмнпрстфхцчшщь]$/i.test(name)) return name.replace(/ь$/i, '') + 'а';
+  if (/а$/i.test(name)) return name.slice(0, -1) + 'у';
+  if (/я$/i.test(name)) return name.slice(0, -1) + 'ю';
+  return name;
+}
+
+createApp({
+  setup() {
+    const agent = ref(null);
+    const messages = reactive([]);
+    const turns = ref([]);
+    const totals = ref({ turns: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: null, failedTurns: 0, compressedTurns: 0 });
+    const draft = ref('');
+    const sending = ref(false);
+    const error = ref('');
+    // Код и тело ответа провайдера держим отдельно от текста ошибки: в этот день
+    // важно показать не пересказ, а то, что провайдер действительно ответил.
+    const errorStatus = ref(null);
+    const errorBody = ref('');
+    const hover = ref(null);
+    const thread = ref(null);
+    const input = ref(null);
+
+    const memoryLine = computed(() => {
+      const n = agent.value?.remembered ?? 0;
+      if (!n) return `${agent.value.model} · история пуста`;
+      return `${agent.value.model} · в памяти ${n} ${plural(n, 'сообщение', 'сообщения', 'сообщений')}`;
+    });
+
+    /** Последний удачный ход: у неудачного токенов нет, показывать по нему нечего. */
+    const lastTurn = computed(() => [...turns.value].reverse().find(t => !t.error) ?? null);
+    const lastPrompt = computed(() => lastTurn.value?.promptTokens ?? 0);
+
+    const fillPercent = computed(() => {
+      const room = agent.value?.contextForPrompt ?? 0;
+      if (!room || !lastPrompt.value) return 0;
+      return Math.round(lastPrompt.value / room * 100);
+    });
+
+    /** Тон шкалы — только на порогах, и рядом с ним всегда стоит то же число словами. */
+    const fillTone = computed(() => fillPercent.value >= 90 ? 'danger' : fillPercent.value >= 70 ? 'warning' : 'info');
+
+    /**
+     * Насколько запрос вырос против прошлого хода. Это и есть цена памяти: прирост
+     * равен тому, сколько токенов добавила предыдущая пара «вопрос-ответ».
+     */
+    const lastDelta = computed(() => {
+      const ok = turns.value.filter(t => !t.error && t.promptTokens != null);
+      if (!ok.length) return 'ходов ещё не было';
+      if (ok.length < 2) return 'первый ход';
+      const delta = ok[ok.length - 1].promptTokens - ok[ok.length - 2].promptTokens;
+      return (delta >= 0 ? '+' : '') + fmt(delta) + ' к прошлому ходу';
+    });
+
+    const costHint = computed(() => {
+      const source = lastTurn.value?.costSource;
+      if (!lastTurn.value) return 'ходов ещё не было';
+      if (source === 'PROVIDER') return 'списано провайдером';
+      if (source === 'PRICE_LIST') return 'оценка по прайсу';
+      return 'провайдер не сообщает';
+    });
+
+    /**
+     * Геометрия столбиков.
+     *
+     * Масштаб по вертикали подстраивается под данные, а не жёстко привязан к лимиту
+     * модели: у модели на 4095 токенов первые ходы занимают 5–8%, и на оси до лимита
+     * рост с 184 до 288 токенов был бы неразличим. Верхняя граница подписана числом,
+     * поэтому подстройка не обманывает.
+     *
+     * Линия лимита появляется, когда до неё уже близко — раньше она только сплющивала бы
+     * столбики к нулю, а расстояние до лимита и без неё показывает шкала выше.
+     */
+    const chart = computed(() => {
+      const width = 300, height = 116, baseY = height - 14, top = 16;
+      const list = turns.value;
+      const limit = agent.value?.contextLimit || 1;
+      const room = agent.value?.contextForPrompt || limit;
+      const peak = Math.max(...list.map(t => t.promptTokens || 0), 1);
+
+      // Запас над самым высоким столбиком — четверть, но не выше лимита: выше он
+      // всё равно не бывает, а пустое место вверху графика ничего не сообщает.
+      const yMax = peak * 1.25 >= room ? limit : Math.round(peak * 1.25);
+      const scale = (tokens) => baseY - (baseY - top) * Math.min(tokens / yMax, 1);
+      const step = width / Math.max(list.length, 1);
+      const barWidth = Math.max(Math.min(step - 2, 26), 2);
+
+      return {
+        width, height, baseY, yMax,
+        // Линии лимита и места под промпт рисуем только когда они попали в масштаб.
+        limitY: limit <= yMax ? scale(limit) : null,
+        roomY: room <= yMax ? scale(room) : null,
+        bars: list.map((turn, i) => {
+          const x = i * step + (step - barWidth) / 2;
+          const y = turn.promptTokens ? scale(turn.promptTokens) : baseY;
+          return {
+            number: turn.number, turn, x, w: barWidth, y,
+            h: Math.max(baseY - y, turn.promptTokens ? 2 : 0),
+            failed: !!turn.error,
+            compressed: !!turn.compressed,
+            title: turn.error
+              ? `Ход ${turn.number}: не удался — ${turn.error}`
+              : `Ход ${turn.number}: запрос ${fmt(turn.promptTokens)}, ответ ${fmt(turn.completionTokens)}, ${money(turn.costUsd)}`,
+          };
+        }),
+      };
+    });
+
+    /** Подсказка идёт за столбиком, но не вылезает за правый край панели. */
+    const tipStyle = computed(() => {
+      if (!hover.value) return {};
+      const left = hover.value.x / chart.value.width * 100;
+      return { left: `min(${left}%, calc(100% - 160px))`, top: '0px' };
+    });
+
+    /** Накопленная цена: монотонная кривая, поэтому хватает спарклайна без осей. */
+    const spark = computed(() => {
+      const list = turns.value.filter(t => t.costUsd != null);
+      if (list.length < 2) return { points: '' };
+      let sum = 0;
+      const cumulative = list.map(t => (sum += t.costUsd));
+      const max = cumulative[cumulative.length - 1] || 1;
+      const points = cumulative
+        .map((value, i) => `${(i / (cumulative.length - 1) * 100).toFixed(2)},${(34 - value / max * 32).toFixed(2)}`)
+        .join(' ');
+      return { points };
+    });
+
+    async function scrollDown() {
+      await nextTick();
+      const box = thread.value;
+      if (box) box.scrollTop = box.scrollHeight;
+    }
+
+    function grow() {
+      const box = input.value;
+      if (!box) return;
+      box.style.height = 'auto';
+      box.style.height = `${Math.min(box.scrollHeight, 180)}px`;
+    }
+
+    function apply(view) {
+      agent.value = view.agent ?? agent.value;
+      messages.splice(0, messages.length, ...view.messages);
+      turns.value = view.turns;
+      totals.value = view.totals;
+      hover.value = null;
+    }
+
+    async function load() {
+      const res = await fetch('/api/chat');
+      apply(await res.json());
+      await scrollDown();
+    }
+
+    async function send() {
+      const text = draft.value.trim();
+      if (!text || sending.value) return;
+
+      error.value = '';
+      errorStatus.value = null;
+      errorBody.value = '';
+      draft.value = '';
+      grow();
+
+      // Показываем вопрос сразу, но помечаем его незавершённым: сохранён он будет
+      // только вместе с ответом.
+      const pending = reactive({ role: 'USER', content: text, at: new Date().toISOString(), pending: true });
+      messages.push(pending);
+      sending.value = true;
+      await scrollDown();
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errorStatus.value = data.providerStatus ?? null;
+          errorBody.value = data.providerBody ?? '';
+          throw new Error(data.error || `Сервер ответил ${res.status}`);
+        }
+        pending.pending = false;
+        messages.push(data.answer);
+        turns.value = [...turns.value, data.turn];
+        totals.value = data.totals;
+        // Настройки берём из ответа целиком: бэкенд могли перезапустить с другим лимитом
+        // или другой моделью, и вкладка об этом иначе не узнает.
+        //
+        // Но только если они пришли. Страница живёт долго и вполне может оказаться новее
+        // бэкенда — статику Spring отдаёт с диска, а классы у запущенного процесса свои.
+        // Тогда поле отсутствует, и затирать им настройки нельзя: без них интерфейс
+        // считает, что диалог ещё не загружен, и прячет всё.
+        agent.value = data.agent ?? { ...agent.value, remembered: data.remembered };
+      } catch (e) {
+        // Переписка не изменилась: в базе не появилось ни вопроса, ни ответа, значит
+        // и в ленте их быть не должно. Текст возвращаем в поле — переспрашивать не придётся.
+        messages.splice(messages.indexOf(pending), 1);
+        draft.value = text;
+        error.value = e.message;
+        // А вот расход изменился: неудачный ход записан в базу, и его надо забрать —
+        // на графике он должен появиться крестиком.
+        try {
+          const state = await (await fetch('/api/chat')).json();
+          agent.value = state.agent ?? agent.value;
+          turns.value = state.turns;
+          totals.value = state.totals;
+        } catch { /* состояние подтянется при следующем ходе */ }
+      } finally {
+        sending.value = false;
+        await scrollDown();
+        grow();
+      }
+    }
+
+    async function forget() {
+      if (!confirm('Стереть всю переписку и весь измеренный расход? Безвозвратно.')) return;
+      error.value = '';
+      errorStatus.value = null;
+      errorBody.value = '';
+      const res = await fetch('/api/chat', { method: 'DELETE' });
+      apply(await res.json());
+    }
+
+    onMounted(load);
+
+    return {
+      agent, messages, turns, totals, draft, sending, error, errorStatus, errorBody, hover,
+      thread, input, memoryLine, lastTurn, lastPrompt, lastDelta, fillPercent, fillTone,
+      costHint, chart, tipStyle, spark,
+      send, forget, grow, markdown, time, accusative, fmt, money, short, plural,
+    };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
