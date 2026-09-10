@@ -1,0 +1,1056 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Advent — сжатие истории</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  /* Локальный CSS — только раскладка страницы и чат: этого в дизайн-системе нет. */
+  [v-cloak] { display: none; }
+
+  .page { width: 100%; max-width: 1280px; margin-inline: auto; padding-inline: var(--space-6); }
+  .page-body { padding-block: var(--space-6) var(--space-10); }
+  .icon { width: 18px; height: 18px; stroke-width: 1.75; }
+
+  /* Две колонки: диалог и его цена рядом — иначе рост токенов не связать с ходом. */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--space-6); align-items: start; }
+  @media (max-width: 1080px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  .nav { gap: var(--space-3); }
+  @media (max-width: 720px) {
+    .page { padding-inline: var(--space-4); }
+    .nav-stack { display: none; }
+  }
+
+  /* ---- Чат: шапка, лента, поле ввода — на всю доступную высоту ---- */
+  .chat { padding: 0; gap: 0; height: calc(100vh - 64px - var(--space-6) - var(--space-10)); min-height: 540px; }
+  .chat-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: center;
+               padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-border); }
+  .chat-who { display: grid; gap: 2px; min-width: 0; }
+  .chat-name { margin: 0; }
+  .thread { flex: 1; overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+  .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: end;
+              padding: var(--space-4) var(--space-5); border-top: 1px solid var(--color-border); }
+  .composer .textarea { height: auto; min-height: 44px; max-height: 180px; resize: none; padding-block: 10px; }
+  @media (max-width: 720px) { .chat { height: auto; min-height: 0; } .thread { max-height: 62vh; } }
+
+  .empty { margin: auto; text-align: center; max-width: 36ch; color: var(--color-text-muted); }
+  .empty p { margin: var(--space-2) 0 0; }
+
+  .msg { max-width: 82%; display: grid; gap: var(--space-1); }
+  .msg[data-role="USER"] { align-self: flex-end; }
+  .msg[data-role="ASSISTANT"], .msg[data-role="ERROR"] { align-self: flex-start; }
+  .msg-meta { display: flex; gap: var(--space-2); align-items: baseline; font-size: 0.75rem; color: var(--color-text-muted); }
+  .msg[data-role="USER"] .msg-meta { justify-content: flex-end; }
+  .msg-meta .who { font-weight: 500; color: var(--color-text-secondary); }
+  .msg-meta .when { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .bubble { padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg); border: 1px solid var(--color-border);
+            font-size: 0.9375rem; line-height: 1.55; color: var(--color-text-primary); overflow-wrap: break-word; }
+  .msg[data-role="USER"] .bubble { background: var(--color-elevated); border-color: var(--color-border-strong);
+                                   white-space: pre-wrap; border-bottom-right-radius: var(--radius-sm); }
+  .msg[data-role="ASSISTANT"] .bubble { background: var(--color-surface); border-bottom-left-radius: var(--radius-sm); }
+  .msg[data-role="ERROR"] .bubble { background: var(--color-surface); border-color: var(--color-danger); color: var(--color-danger);
+                                    font-size: 0.8125rem; display: flex; gap: var(--space-2); align-items: flex-start; }
+  .msg[data-role="ERROR"] .icon { flex: none; margin-top: 2px; }
+  .msg.is-pending .bubble { opacity: 0.65; }
+
+  /* Свёрнутые сообщения. Они есть в базе и остаются в ленте, но модель их больше
+     не видит дословно — вместо них уходит конспект. Приглушены и подписаны, а не
+     спрятаны: спрятанное не сравнить с тем, что от него осталось. */
+  .msg.is-folded { opacity: 0.55; }
+  .msg.is-folded .bubble { border-style: dashed; }
+  .msg-meta .folded { color: var(--color-success); }
+  .fold-mark { align-self: stretch; display: flex; align-items: center; gap: var(--space-3);
+               font-size: 0.75rem; color: var(--color-text-muted); }
+  .fold-mark::before, .fold-mark::after { content: ""; flex: 1; height: 1px; background: var(--color-border); }
+
+  /* Ответ модели — markdown в минимальном объёме. */
+  .bubble p { margin: 0 0 var(--space-3); }
+  .bubble > :last-child { margin-bottom: 0; }
+  .bubble h4 { font-family: var(--font-display); font-size: 1rem; font-weight: 600; margin: var(--space-3) 0 var(--space-2); }
+  .bubble ul, .bubble ol { margin: 0 0 var(--space-3); padding-left: var(--space-5); }
+  .bubble li { margin-bottom: var(--space-1); }
+  .bubble hr { height: 1px; border: 0; background: var(--color-border); margin: var(--space-4) 0; }
+  .bubble strong { font-weight: 600; }
+  .bubble em { color: var(--color-text-secondary); }
+  .bubble code { font-family: var(--font-mono); font-size: 0.875em; background: var(--color-elevated);
+                 border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 1px 4px; }
+  .bubble pre { margin: 0 0 var(--space-3); padding: var(--space-3); overflow: auto; background: var(--color-elevated);
+                border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: var(--font-mono);
+                font-size: 0.8125rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+
+  .typing { display: inline-flex; gap: 4px; align-items: center; height: 1.4em; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--color-text-muted); animation: typing 1.2s infinite ease-in-out; }
+  .typing i:nth-child(2) { animation-delay: .2s; }
+  .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes typing { 0%, 80%, 100% { transform: translateY(0); opacity: .4; } 40% { transform: translateY(-4px); opacity: 1; } }
+
+  /* ---- Панель расхода: шкала, числа, график ---- */
+  .panel { padding: 0; gap: 0; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+                padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-border); }
+  .panel-body { padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5); }
+  .panel-section { display: flex; flex-direction: column; gap: var(--space-2); }
+  .panel-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+  .panel-note { margin: 0; font-size: 0.75rem; line-height: 1.5; color: var(--color-text-muted); }
+
+  /* Шкала заполнения контекста. Один цвет данных, тон меняется только на порогах —
+     и всегда вместе с текстом рядом, а не цветом в одиночку. */
+  .meter { position: relative; height: 8px; border-radius: var(--radius-full);
+           background: var(--color-elevated); border: 1px solid var(--color-border); overflow: hidden; }
+  .meter-fill { display: block; height: 100%; border-radius: var(--radius-full);
+                background: var(--color-info); transition: width var(--motion-base) var(--easing-standard); }
+  .meter[data-tone="warning"] .meter-fill { background: var(--color-warning); }
+  .meter[data-tone="danger"] .meter-fill { background: var(--color-danger); }
+
+  /* Числа задания: вход, ответ, диалог целиком, деньги. Моно и в колонку. */
+  .nums { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--color-border);
+          border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; }
+  .num { background: var(--color-surface); padding: var(--space-3) var(--space-4); display: grid; gap: 2px; }
+  .num-label { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); }
+  .num-value { font-family: var(--font-mono); font-size: 1.125rem; font-weight: 600;
+               font-variant-numeric: tabular-nums; color: var(--color-text-primary); }
+  .num-hint { font-size: 0.6875rem; color: var(--color-text-muted); font-family: var(--font-mono); }
+
+  .chart-wrap { position: relative; }
+  .chart { display: block; width: 100%; height: auto; overflow: visible; }
+  .chart-bar { fill: var(--color-info); }
+  .chart-bar[data-state="truncated"] { fill: var(--color-warning); }
+  .chart-bar:hover { fill: var(--color-info); filter: brightness(1.35); }
+  .chart-fail { stroke: var(--color-danger); stroke-width: 1.5; stroke-linecap: round; }
+  .chart-limit { stroke: var(--color-danger); stroke-width: 1; stroke-dasharray: 3 3; }
+  .chart-prompt-room { stroke: var(--color-text-muted); stroke-width: 1; stroke-dasharray: 2 4; }
+  .chart-axis { stroke: var(--color-border-strong); stroke-width: 1; }
+  .chart-label { font-family: var(--font-mono); font-size: 8px; fill: var(--color-text-muted); }
+  .chart-hit { fill: transparent; cursor: default; }
+
+  /* Подсказка по ходу. Появляется по наведению: без неё точные числа пришлось бы
+     угадывать по высоте столбика. */
+  .tip { position: absolute; z-index: 2; pointer-events: none; min-width: 150px; padding: var(--space-2) var(--space-3);
+         background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);
+         box-shadow: var(--shadow-md, 0 4px 12px rgba(15, 18, 25, 0.12)); font-size: 0.75rem; line-height: 1.5; }
+  .tip dl { display: grid; grid-template-columns: auto auto; gap: 1px var(--space-3); margin: var(--space-1) 0 0; }
+  .tip dt { color: var(--color-text-muted); }
+  .tip dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+  .tip-title { font-weight: 600; color: var(--color-text-primary); }
+
+  .spark { display: block; width: 100%; height: 36px; overflow: visible; }
+  .spark-line { fill: none; stroke: var(--color-info); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+
+  /* Состав промпта одной полосой: четыре части, которые ведут себя по-разному.
+     Персона постоянна, конспект почти постоянен, хвост ограничен — из этого и берётся
+     то, что запрос перестаёт расти. */
+  .stack { display: flex; height: 10px; border-radius: var(--radius-full); overflow: hidden;
+           border: 1px solid var(--color-border); background: var(--color-elevated); }
+  .stack i { display: block; height: 100%; }
+  .stack i[data-part="persona"], .dot[data-part="persona"] { background: var(--color-text-muted); }
+  .stack i[data-part="summary"], .dot[data-part="summary"] { background: var(--color-success); }
+  .stack i[data-part="tail"], .dot[data-part="tail"] { background: var(--color-info); }
+  .stack i[data-part="question"], .dot[data-part="question"] { background: var(--color-warning); }
+  .stack-legend { display: grid; grid-template-columns: 1fr auto; gap: 2px var(--space-3); margin: 0; font-size: 0.75rem; }
+  .stack-legend dt { display: flex; align-items: center; gap: 6px; color: var(--color-text-secondary); }
+  .stack-legend dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+                     text-align: right; color: var(--color-text-primary); }
+  .dot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+
+  /* Конспект целиком: главный экспонат дня, поэтому виден сразу, а не спрятан в детали. */
+  .summary-box { margin: 0; max-height: 220px; overflow: auto; padding: var(--space-3);
+                 font-size: 0.8125rem; line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+                 color: var(--color-text-primary); background: var(--color-elevated);
+                 border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+  .summary-old { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
+
+  /* Второй ряд на графике: сколько токенов занял бы тот же ход без сжатия. Пунктир,
+     потому что это оценка, а не счёт провайдера. */
+  .chart-raw { fill: none; stroke: var(--color-text-muted); stroke-width: 1.25; stroke-dasharray: 3 2; }
+  .chart-fold { stroke: var(--color-success); stroke-width: 2; stroke-linecap: round; }
+
+  /* Таблица ходов: те же числа, что на графике, но читаемые точно. Свёрнута по умолчанию. */
+  .turns-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+  .turns-table th { text-align: right; font-weight: 500; color: var(--color-text-muted); padding: 4px 6px;
+                    border-bottom: 1px solid var(--color-border); }
+  .turns-table th:first-child, .turns-table td:first-child { text-align: left; }
+  .turns-table td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--color-border-soft);
+                    font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .turns-table tr[data-failed="true"] td { color: var(--color-danger); }
+  .turns-scroll { max-height: 220px; overflow: auto; }
+  .details-summary { cursor: pointer; font-size: 0.75rem; color: var(--color-text-secondary); }
+
+  /* Сырое тело ответа провайдера в сообщении об ошибке. */
+  .raw { margin: var(--space-2) 0 0; max-height: 180px; overflow: auto; font-family: var(--font-mono);
+         font-size: 0.6875rem; line-height: 1.5; white-space: pre-wrap; word-break: break-all;
+         color: var(--color-text-secondary); background: var(--color-elevated);
+         border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-2); }
+  .msg[data-role="ERROR"] .bubble { display: block; }
+  .err-head { display: flex; gap: var(--space-2); align-items: flex-start; }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <nav class="nav page">
+    <span class="nav-brand">
+      <span class="nav-brand-mark" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5c.67 0 1.35.09 2 .26 1.78-2 5.03-2.84 6.42-2.26 1.4.58-.42 7-.42 7 .57 1.07 1 2.24 1 3.44C21 17.9 16.97 21 12 21s-9-3-9-7.56c0-1.25.5-2.4 1-3.44 0 0-1.89-6.42-.5-7 1.39-.58 4.72.23 6.5 2.23A9.04 9.04 0 0 1 12 5Z"/>
+          <path d="M8 14v.5"/><path d="M16 14v.5"/><path d="M11.25 16.25h1.5L12 17l-.75-.75Z"/>
+        </svg>
+      </span>
+      AI Advent
+    </span>
+    <span class="chip nav-stack" data-tone="neutral">Kotlin · Spring Boot · SQLite · DeepSeek</span>
+  </nav>
+
+  <main class="page page-body" v-if="agent">
+   <div class="layout">
+    <section class="card chat">
+
+      <header class="chat-head">
+        <span class="chat-who">
+          <h1 class="t-title-md chat-name">{{ agent.name }}</h1>
+          <span class="t-body-sm t-muted">{{ memoryLine }}</span>
+        </span>
+        <button class="btn btn-secondary btn-sm" @click="forget" :disabled="sending || !messages.length">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 6h18"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+          </svg>
+          Забыть всё
+        </button>
+      </header>
+
+      <div class="thread" ref="thread">
+        <div class="empty" v-if="!messages.length && !sending">
+          <p class="t-body-md">Диалог пуст.</p>
+          <p class="t-body-sm" v-if="agent.mode === 'SUMMARY'">Напишите что-нибудь и следите за панелью
+             справа. Первые ходы уйдут модели дословно, а как только сообщений станет больше
+             {{ agent.keepLast + agent.summarizeEvery }}, начало разговора свернётся в конспект — и запрос
+             перестанет расти. {{ accusative(agent.name) }} при этом продолжит помнить, что было
+             в начале, но уже пересказом, а не дословно.</p>
+          <p class="t-body-sm" v-else>Напишите что-нибудь и следите за панелью справа: история уходит
+             модели целиком на каждом ходу, поэтому запрос растёт с каждым сообщением. Это прогон
+             без сжатия — точка отсчёта, с которой сравнивается прогон с конспектом.</p>
+        </div>
+
+        <template v-for="(m, i) in messages" :key="i">
+          <!-- Граница конспекта. Всё, что выше, модель знает только пересказом — и это
+               единственное место, где видно, докуда именно дотянулось сжатие. -->
+          <div class="fold-mark" v-if="i === foldBoundary">
+            выше — в конспекте: {{ foldedCount }} {{ plural(foldedCount, 'сообщение', 'сообщения', 'сообщений') }}
+          </div>
+          <article class="msg" :data-role="m.role" :class="{ 'is-pending': m.pending, 'is-folded': isFolded(m) }">
+            <div class="msg-meta">
+              <span class="who">{{ m.role === 'USER' ? 'Вы' : agent.name }}</span>
+              <span class="when">{{ time(m.at) }}</span>
+              <span class="folded" v-if="isFolded(m)">в конспекте</span>
+            </div>
+            <div class="bubble" v-if="m.role === 'ASSISTANT'" v-html="markdown(m.content)"></div>
+            <div class="bubble" v-else>{{ m.content }}</div>
+          </article>
+        </template>
+
+        <article class="msg" data-role="ASSISTANT" v-if="sending">
+          <div class="msg-meta"><span class="who">{{ agent.name }}</span></div>
+          <div class="bubble"><span class="typing" aria-label="печатает"><i></i><i></i><i></i></span></div>
+        </article>
+
+        <article class="msg" data-role="ERROR" v-if="error">
+          <div class="bubble">
+            <div class="err-head">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/>
+              </svg>
+              <span>
+                <strong v-if="errorStatus">Провайдер ответил {{ errorStatus }}.</strong>
+                {{ error }}
+                Переписка не изменилась, но ход записан в расход — он виден на графике.
+              </span>
+            </div>
+            <!-- Тело ответа провайдера дословно: в этот день именно в нём написано,
+                 каков лимит модели и на сколько мы его перебрали. -->
+            <details v-if="errorBody">
+              <summary class="details-summary">Ответ провайдера целиком</summary>
+              <pre class="raw">{{ errorBody }}</pre>
+            </details>
+          </div>
+        </article>
+      </div>
+
+      <form class="composer" @submit.prevent="send">
+        <div class="field">
+          <textarea class="textarea" ref="input" v-model="draft" rows="1" aria-label="Сообщение"
+                    placeholder="Написать сообщение…" :disabled="sending"
+                    @keydown.enter.exact.prevent="send" @input="grow"></textarea>
+        </div>
+        <button class="btn btn-primary" type="submit" :disabled="sending || !draft.trim()">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7Z"/>
+          </svg>
+          Отправить
+        </button>
+      </form>
+
+    </section>
+
+    <!-- ===== Панель контекста и расхода: сжатие и его цена ===== -->
+    <aside class="card panel">
+      <header class="panel-head">
+        <h2 class="t-title-sm" style="margin: 0">Контекст</h2>
+        <span class="chip" :data-tone="agent.mode === 'SUMMARY' ? 'success' : 'neutral'">
+          {{ agent.mode === 'SUMMARY' ? 'со сжатием' : 'без сжатия' }}
+        </span>
+      </header>
+
+      <div class="panel-body">
+
+        <!-- ===== Из чего собран запрос. Главное, что этот день добавляет к дню 8:
+             расход был и раньше, а вот состав промпта показывает, откуда взялась
+             экономия и что за неё отдано. ===== -->
+        <section class="panel-section">
+          <div class="panel-row">
+            <span class="num-label">Что уходит модели</span>
+            <span class="t-mono-sm">{{ short(agent.model) }}</span>
+          </div>
+          <p class="panel-note" v-if="agent.mode === 'SUMMARY'">
+            Дословно — последние {{ agent.keepLast }} сообщений. Всё, что старше, сворачивается
+            пачками по {{ agent.summarizeEvery }} в конспект не длиннее {{ agent.summaryMaxTokens }} токенов.
+          </p>
+          <p class="panel-note" v-else>
+            Вся переписка уходит модели дословно, как в дне 8: запрос растёт с каждым ходом.
+          </p>
+
+          <template v-if="lastTurn">
+            <div class="stack" role="img" :aria-label="stackLabel">
+              <i v-for="p in stack" :key="p.part" :data-part="p.part" :style="{ width: p.percent + '%' }"></i>
+            </div>
+            <dl class="stack-legend">
+              <template v-for="p in stack" :key="p.part">
+                <dt><span class="dot" :data-part="p.part"></span>{{ p.label }}</dt>
+                <dd>{{ fmt(p.chars) }}</dd>
+              </template>
+            </dl>
+            <p class="panel-note">
+              Промпт последнего хода — {{ fmt(lastTurn.charsSent) }} симв.,
+              дословно в нём {{ lastTurn.promptMessages }} из {{ lastTurn.historyTotal }} сообщений.
+              <template v-if="lastTurn.rawChars > lastTurn.charsSent * 1.05">
+                Без сжатия ушло бы {{ fmt(lastTurn.rawChars) }} — короче в {{ ratio }} раз.
+              </template>
+              <template v-else>Это вся переписка целиком.</template>
+            </p>
+          </template>
+        </section>
+
+        <!-- ===== Конспект целиком. Числа скажут, что промпт стал короче; прочитать,
+             что осталось от разговора, можно только здесь. ===== -->
+        <section class="panel-section" v-if="summary">
+          <div class="panel-row">
+            <span class="num-label">Конспект · версия {{ summary.version }}</span>
+            <span class="t-mono-sm">{{ fmt(summary.chars) }} симв.</span>
+          </div>
+          <p class="summary-box">{{ summary.content }}</p>
+          <p class="panel-note">
+            Заменяет первые {{ summary.coveredMessages }}
+            {{ plural(summary.coveredMessages, 'сообщение', 'сообщения', 'сообщений') }} — в ленте они приглушены.
+            Каждая следующая версия складывается из предыдущей и новой пачки, поэтому подробности
+            начала разговора постепенно стираются: это и есть цена постоянного размера промпта.
+          </p>
+          <details v-if="summaries.length > 1">
+            <summary class="details-summary">Прошлые версии ({{ summaries.length - 1 }})</summary>
+            <div class="summary-old" v-for="s in older" :key="s.version">
+              <div class="panel-row">
+                <span class="num-label">v{{ s.version }} · {{ s.coveredMessages }} сообщ.</span>
+                <span class="t-mono-sm">{{ fmt(s.chars) }} симв.</span>
+              </div>
+              <p class="summary-box">{{ s.content }}</p>
+            </div>
+          </details>
+        </section>
+
+        <!-- Шкала: сколько контекста занял последний запрос. Лимит модели считается
+             вместе с ответом, поэтому под промпт остаётся меньше, и на шкале это видно. -->
+        <section class="panel-section">
+          <div class="panel-row">
+            <span class="num-label">Контекст под промпт</span>
+            <span class="t-mono-sm">{{ fmt(lastPrompt) }} / {{ fmt(agent.contextForPrompt) }}</span>
+          </div>
+          <div class="meter" :data-tone="fillTone" role="img"
+               :aria-label="`Запрос занял ${fillPercent}% контекста, отведённого под промпт`">
+            <i class="meter-fill" :style="{ width: Math.min(fillPercent, 100) + '%' }"></i>
+          </div>
+          <p class="panel-note">
+            {{ fillPercent }}% контекста под промпт. Лимит модели {{ fmt(agent.contextLimit) }},
+            из них {{ fmt(agent.maxTokens) }} зарезервировано под ответ.
+          </p>
+          <!-- Оговорка не из осторожности, а по замеру: агрегатор отклонил запрос,
+               когда эта шкала показывала 60%. Он проверяет лимит своей оценкой
+               токенов, а счёт выставляет площадка — это разные числа. -->
+          <!-- Оговорка не из осторожности, а по замеру дня 8: агрегатор отклонил запрос,
+               когда эта шкала показывала 60%. Но она про агрегатор, поэтому на прямом
+               провайдере её показывать нельзя — там отказ приходит по этому же счёту. -->
+          <p class="panel-note" v-if="viaAggregator">
+            Шкала — по счёту площадки, который приходит вместе с ответом. Лимит
+            агрегатор проверяет своей оценкой, а она на русском тексте выше, поэтому
+            отказ приходит раньше, чем шкала дойдёт до конца.
+          </p>
+        </section>
+
+        <!-- Три числа, которые просит задание, плюс деньги. Все — от провайдера,
+             ни одно не оценка: своего токенизатора в приложении нет. -->
+        <section class="nums">
+          <div class="num">
+            <span class="num-label">Запрос</span>
+            <span class="num-value">{{ fmt(lastTurn?.promptTokens) }}</span>
+            <span class="num-hint">{{ lastDelta }}</span>
+          </div>
+          <div class="num">
+            <span class="num-label">Ответ</span>
+            <span class="num-value">{{ fmt(lastTurn?.completionTokens) }}</span>
+            <span class="num-hint">{{ lastTurn?.finishReason || '—' }}</span>
+          </div>
+          <div class="num">
+            <span class="num-label">Весь диалог</span>
+            <span class="num-value">{{ totals.turns ? fmt(totals.totalTokens) : '—' }}</span>
+            <span class="num-hint">{{ totals.turns }} {{ plural(totals.turns, 'ход', 'хода', 'ходов') }}</span>
+          </div>
+          <div class="num">
+            <span class="num-label">Цена диалога</span>
+            <span class="num-value">{{ money(totals.costUsd) }}</span>
+            <span class="num-hint">{{ costHint }}</span>
+          </div>
+          <!-- Итог дня одним числом. В символах, а не в токенах, и это принципиально:
+               токены известны только для того, что реально ушло, а «сколько было бы
+               без сжатия» — величина неотправленная. Символы мы считаем сами и точно. -->
+          <div class="num">
+            <span class="num-label">Экономия</span>
+            <span class="num-value">{{ savings.percent === null ? '—' : savings.percent + '%' }}</span>
+            <span class="num-hint">символов, с ценой сжатия</span>
+          </div>
+          <div class="num">
+            <span class="num-label">На сжатие</span>
+            <span class="num-value">{{ totals.summaryRequests ? fmt(totals.summaryTokens) : '—' }}</span>
+            <span class="num-hint">
+              {{ totals.summaryRequests }} {{ plural(totals.summaryRequests, 'сворачивание', 'сворачивания', 'сворачиваний') }}
+            </span>
+          </div>
+        </section>
+
+        <!-- Кэш префикса. На экране он нужен ровно затем, чтобы объяснить главную
+             неожиданность дня: токенов стало меньше, а денег больше. -->
+        <p class="panel-note" v-if="totals.cachedPromptTokens">
+          Из {{ fmt(totals.promptTokens) }} токенов входа провайдер зачёл из кэша
+          {{ cachedShare }}% ({{ fmt(totals.cachedPromptTokens) }}). Кэшированный вход стоит
+          в десятки раз дешевле свежего, а кэшируется только неизменное начало промпта —
+          поэтому каждый новый конспект обнуляет кэш, и экономия в токенах не равна
+          экономии в деньгах.
+        </p>
+
+        <!-- Рост запроса по ходам. Один ряд данных и подписанная линия лимита:
+             двух шкал на одном графике не бывает, а деньги идут отдельно ниже. -->
+        <section class="panel-section" v-if="answers.length">
+          <div class="panel-row">
+            <span class="num-label">Токены запроса по ходам</span>
+            <span class="panel-note">ось до {{ fmt(chart.yMax) }}</span>
+          </div>
+          <div class="chart-wrap" @mouseleave="hover = null">
+            <svg class="chart" :viewBox="`0 0 ${chart.width} ${chart.height}`" role="img"
+                 aria-label="Столбиковая диаграмма: сколько токенов занимал запрос на каждом ходу">
+              <!-- Верхняя граница оси: подстройка масштаба всегда подписана числом. -->
+              <text class="chart-label" x="0" y="8">{{ fmt(chart.yMax) }}</text>
+              <template v-if="chart.limitY !== null">
+                <line class="chart-limit" :x1="0" :x2="chart.width" :y1="chart.limitY" :y2="chart.limitY"/>
+                <text class="chart-label" :x="chart.width" :y="chart.limitY - 3" text-anchor="end">
+                  лимит {{ fmt(agent.contextLimit) }}
+                </text>
+              </template>
+              <template v-if="chart.roomY !== null">
+                <line class="chart-prompt-room" :x1="0" :x2="chart.width" :y1="chart.roomY" :y2="chart.roomY"/>
+                <text class="chart-label" x="0" :y="chart.roomY - 3">
+                  под промпт {{ fmt(agent.contextForPrompt) }}
+                </text>
+              </template>
+
+              <!-- Второй ряд: сколько токенов занял бы тот же ход без сжатия. Пунктир —
+                   потому что это оценка: символы полной истории, делённые на измеренную
+                   плотность этого же хода. Счёт провайдера есть только у отправленного. -->
+              <polyline class="chart-raw" v-if="chart.rawPoints" :points="chart.rawPoints"
+                        vector-effect="non-scaling-stroke"/>
+              <text class="chart-label" v-if="chart.rawPoints" x="0" y="8" dx="46">
+                — — без сжатия (оценка)
+              </text>
+              <!-- Где история сворачивалась: у этих ходов запрос падает, но появляется
+                   отдельный счёт за сжатие. -->
+              <line class="chart-fold" v-for="f in chart.folds" :key="f.key"
+                    :x1="f.x" :x2="f.x" :y1="chart.baseY" :y2="chart.baseY + 5"/>
+
+              <g v-for="b in chart.bars" :key="b.number">
+                <rect v-if="!b.failed" class="chart-bar" :data-state="b.truncated ? 'truncated' : 'ok'"
+                      :x="b.x" :y="b.y" :width="b.w" :height="b.h" rx="2"/>
+                <g v-else class="chart-fail" :transform="`translate(${b.x + b.w / 2}, ${chart.baseY - 5})`">
+                  <line x1="-3.5" y1="-3.5" x2="3.5" y2="3.5"/><line x1="-3.5" y1="3.5" x2="3.5" y2="-3.5"/>
+                </g>
+                <!-- Прозрачная область наведения шире столбика: попасть в 6 пикселей мышью трудно. -->
+                <rect class="chart-hit" :x="b.x - 1" y="0" :width="b.w + 2" :height="chart.height"
+                      @mouseenter="hover = b"><title>{{ b.title }}</title></rect>
+              </g>
+              <line class="chart-axis" :x1="0" :x2="chart.width" :y1="chart.baseY" :y2="chart.baseY"/>
+            </svg>
+            <div class="tip" v-if="hover" :style="tipStyle">
+              <span class="tip-title">Ход {{ hover.number }}</span>
+              <dl>
+                <dt>запрос</dt><dd>{{ fmt(hover.turn.promptTokens) }}</dd>
+                <dt>ответ</dt><dd>{{ fmt(hover.turn.completionTokens) }}</dd>
+                <dt>цена</dt><dd>{{ money(hover.turn.costUsd) }}</dd>
+                <dt>задержка</dt><dd>{{ (hover.turn.latencyMs / 1000).toFixed(1) }} с</dd>
+                <dt v-if="hover.turn.charsPerToken">симв./токен</dt>
+                <dd v-if="hover.turn.charsPerToken">{{ hover.turn.charsPerToken.toFixed(1) }}</dd>
+                <dt v-if="hover.raw">без сжатия</dt>
+                <dd v-if="hover.raw">≈{{ fmt(hover.raw) }}</dd>
+                <dt>дословно</dt>
+                <dd>{{ hover.turn.promptMessages }} / {{ hover.turn.historyTotal }}</dd>
+              </dl>
+              <p class="panel-note" v-if="hover.failed">Ход не удался: {{ hover.turn.error }}</p>
+              <p class="panel-note" v-else-if="hover.truncated">Промпт урезал провайдер — не мы.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Деньги — отдельным графиком, а не второй осью на предыдущем. -->
+        <section class="panel-section" v-if="spark.points">
+          <div class="panel-row">
+            <span class="num-label">Накопленная цена</span>
+            <span class="t-mono-sm">{{ money(totals.costUsd) }}</span>
+          </div>
+          <svg class="spark" viewBox="0 0 100 36" preserveAspectRatio="none" role="img"
+               :aria-label="`Накопленная цена диалога дошла до ${money(totals.costUsd)}`">
+            <polyline class="spark-line" :points="spark.points" vector-effect="non-scaling-stroke"/>
+          </svg>
+        </section>
+
+        <!-- Предупреждения: сигнальный цвет всегда с текстом, никогда цветом в одиночку. -->
+        <section class="panel-section" v-if="totals.truncatedTurns || totals.failedTurns">
+          <span class="chip" data-tone="warning" v-if="totals.truncatedTurns">
+            {{ totals.truncatedTurns }} {{ plural(totals.truncatedTurns, 'ход', 'хода', 'ходов') }} урезано молча
+          </span>
+          <span class="chip" data-tone="danger" v-if="totals.failedTurns">
+            {{ totals.failedTurns }} {{ plural(totals.failedTurns, 'ход', 'хода', 'ходов') }} упало с ошибкой
+          </span>
+          <p class="panel-note" v-if="totals.truncatedTurns">
+            Промпт урезал сам провайдер — это не наше сжатие: история выросла, а токенов
+            в запросе не прибавилось. Ответ пришёл без ошибки, но часть контекста модель
+            не увидела, и в отличие от конспекта взамен не получила ничего.
+          </p>
+        </section>
+
+        <!-- Те же числа, читаемые точно: график показывает форму, таблица — значения. -->
+        <details v-if="turns.length">
+          <summary class="details-summary">Все обращения к модели ({{ totals.requests }})</summary>
+          <div class="turns-scroll">
+            <table class="turns-table">
+              <thead>
+                <tr><th>Ход</th><th>Вид</th><th>Запрос</th><th>Ответ</th><th>Цена</th><th>мс</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(t, i) in turns" :key="i" :data-failed="!!t.error">
+                  <td>{{ t.number }}</td>
+                  <td>{{ t.kind === 'SUMMARY' ? 'сжатие' : 'ход' }}</td>
+                  <td>{{ t.error ? '—' : fmt(t.promptTokens) }}</td>
+                  <td>{{ t.error ? '—' : fmt(t.completionTokens) }}</td>
+                  <td>{{ t.error ? '—' : money(t.costUsd) }}</td>
+                  <td>{{ t.latencyMs }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+      </div>
+    </aside>
+   </div>
+  </main>
+
+  <main class="page page-body" v-else>
+    <p class="t-body-md t-muted">Загружаю диалог…</p>
+  </main>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, reactive, ref, computed, nextTick, onMounted } = Vue;
+
+/* ---------- markdown: минимальный рендерер, весь текст экранируется до разметки ---------- */
+const ESCAPE = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const escapeHtml = (text) => text.replace(/[&<>"']/g, c => ESCAPE[c]);
+
+function inlineMd(text) {
+  return text
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[\s(«"'])\*([^*\n]+)\*/gm, '$1<em>$2</em>')
+    .replace(/(^|[\s(«"'])_([^_\n]+)_/gm, '$1<em>$2</em>');
+}
+
+function blocksMd(text) {
+  const out = [];
+  let list = null;
+  let para = [];
+  const flushList = () => {
+    if (!list) return;
+    const start = list.tag === 'ol' && list.start !== 1 ? ` start="${list.start}"` : '';
+    out.push(`<${list.tag}${start}>${list.items.map(i => `<li>${i}</li>`).join('')}</${list.tag}>`);
+    list = null;
+  };
+  const flushPara = () => {
+    if (!para.length) return;
+    out.push(`<p>${para.join('<br>')}</p>`);
+    para = [];
+  };
+  for (const raw of text.split('\n')) {
+    const line = raw.trimEnd();
+    if (!line.trim()) { flushList(); flushPara(); continue; }
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) { flushList(); flushPara(); out.push(`<h4>${inlineMd(heading[1])}</h4>`); continue; }
+    if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line)) { flushList(); flushPara(); out.push('<hr>'); continue; }
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
+    const numbered = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+    if (bullet || numbered) {
+      flushPara();
+      const tag = bullet ? 'ul' : 'ol';
+      const start = numbered ? Number(numbered[1]) : 1;
+      if (!list || list.tag !== tag) { flushList(); list = { tag, start, items: [] }; }
+      list.items.push(inlineMd(bullet ? bullet[1] : numbered[2]));
+      continue;
+    }
+    flushList();
+    para.push(inlineMd(line));
+  }
+  flushList();
+  flushPara();
+  return out.join('');
+}
+
+function markdown(text) {
+  return escapeHtml(text ?? '')
+    .split('```')
+    .map((part, i) => i % 2
+      ? `<pre>${part.replace(/^[\w-]*\r?\n/, '').replace(/\s+$/, '')}</pre>`
+      : blocksMd(part))
+    .join('');
+}
+
+/* ---------- мелкие помощники ---------- */
+const time = (iso) => iso ? new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
+
+function plural(n, one, few, many) {
+  const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return many;
+  if (b > 1 && b < 5) return few;
+  if (b === 1) return one;
+  return many;
+}
+
+/** Числа выравниваются в колонку, поэтому разряды разделяются узким пробелом. */
+const fmt = (n) => (n === null || n === undefined) ? '—' : n.toLocaleString('ru-RU').replace(/\u00A0/g, '\u2009');
+
+/**
+ * Деньги за один ход — это доли цента, и обычные два знака после точки превратили бы
+ * их в ноль. Поэтому число знаков зависит от порядка суммы.
+ */
+function money(usd) {
+  if (usd === null || usd === undefined) return '—';
+  if (usd === 0) return '$0';
+  if (usd < 0.01) return '$' + usd.toFixed(6).replace(/0+$/, '');
+  if (usd < 1) return '$' + usd.toFixed(4);
+  return '$' + usd.toFixed(2);
+}
+
+/** В шапке панели нужна модель, а не её путь у провайдера. */
+const short = (model) => model.includes('/') ? model.split('/').pop() : model;
+
+/** Имя агента стоит в тексте в винительном падеже: «это не собьёт Барсика». */
+function accusative(name) {
+  if (/[бвгджзйклмнпрстфхцчшщь]$/i.test(name)) return name.replace(/ь$/i, '') + 'а';
+  if (/а$/i.test(name)) return name.slice(0, -1) + 'у';
+  if (/я$/i.test(name)) return name.slice(0, -1) + 'ю';
+  return name;
+}
+
+createApp({
+  setup() {
+    const agent = ref(null);
+    const messages = reactive([]);
+    const turns = ref([]);
+    const totals = ref({
+      turns: 0, requests: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: null,
+      summaryRequests: 0, summaryTokens: 0, summaryCostUsd: null, failedTurns: 0, truncatedTurns: 0,
+    });
+    // Конспект отдаёт сервер вместе с перепиской: в базе он лежит отдельно, и вкладка
+    // его не собирает, а получает готовым.
+    const summary = ref(null);
+    const summaries = ref([]);
+    const draft = ref('');
+    const sending = ref(false);
+    const error = ref('');
+    // Код и тело ответа провайдера держим отдельно от текста ошибки: в этот день
+    // важно показать не пересказ, а то, что провайдер действительно ответил.
+    const errorStatus = ref(null);
+    const errorBody = ref('');
+    const hover = ref(null);
+    const thread = ref(null);
+    const input = ref(null);
+
+    const memoryLine = computed(() => {
+      const n = agent.value?.remembered ?? 0;
+      if (!n) return `${agent.value.model} · история пуста`;
+      const base = `${agent.value.model} · в памяти ${n} ${plural(n, 'сообщение', 'сообщения', 'сообщений')}`;
+      // Различие, вокруг которого построен день: часть памяти модель видит дословно,
+      // часть — только пересказом.
+      return foldedCount.value ? `${base}, из них ${foldedCount.value} пересказом` : base;
+    });
+
+    /**
+     * Граница конспекта: до какого сообщения дотянулось сжатие.
+     *
+     * Свёрнутые сообщения остаются в ленте, потому что в базе они целы — сжатие
+     * происходит на пути к модели, а не в хранилище. Приглушить их надо ровно затем,
+     * чтобы разница между «помню дословно» и «помню пересказом» была видна глазами.
+     */
+    const foldedUpto = computed(() => summary.value?.coversUptoMessageId ?? 0);
+    const isFolded = (m) => !!m.id && m.id <= foldedUpto.value;
+    const foldedCount = computed(() => messages.filter(isFolded).length);
+    /** Индекс первого несвёрнутого сообщения: перед ним рисуется черта. -1 — черты нет. */
+    const foldBoundary = computed(() => foldedCount.value || -1);
+    /** Прошлые версии конспекта, от свежей к старой: актуальная показана отдельно. */
+    const older = computed(() => summaries.value.filter(s => s.version !== summary.value?.version).reverse());
+
+    /** Ходы диалога отдельно от сворачиваний: на графике один ряд — про разговор. */
+    const answers = computed(() => turns.value.filter(t => t.kind === 'ANSWER'));
+
+    /**
+     * Сколько токенов занял бы тот же ход без сжатия.
+     *
+     * Оценка, и это принципиально: символы полной истории делятся на плотность,
+     * измеренную на этом же ходу. Провайдер считает токены только у того, что отправлено,
+     * а здесь величина неотправленная — точного числа для неё не существует.
+     */
+    const rawEstimate = (turn) => turn.charsPerToken ? Math.round(turn.rawChars / turn.charsPerToken) : null;
+
+    /** Последний удачный ход: у неудачного токенов нет, показывать по нему нечего. */
+    const lastTurn = computed(() => [...answers.value].reverse().find(t => !t.error) ?? null);
+    const lastPrompt = computed(() => lastTurn.value?.promptTokens ?? 0);
+
+    const fillPercent = computed(() => {
+      const room = agent.value?.contextForPrompt ?? 0;
+      if (!room || !lastPrompt.value) return 0;
+      return Math.round(lastPrompt.value / room * 100);
+    });
+
+    /** Тон шкалы — только на порогах, и рядом с ним всегда стоит то же число словами. */
+    const fillTone = computed(() => fillPercent.value >= 90 ? 'danger' : fillPercent.value >= 70 ? 'warning' : 'info');
+
+    /**
+     * Насколько запрос вырос против прошлого хода. Это и есть цена памяти: прирост
+     * равен тому, сколько токенов добавила предыдущая пара «вопрос-ответ».
+     */
+    const lastDelta = computed(() => {
+      const ok = answers.value.filter(t => !t.error && t.promptTokens != null);
+      if (!ok.length) return 'ходов ещё не было';
+      if (ok.length < 2) return 'первый ход';
+      const delta = ok[ok.length - 1].promptTokens - ok[ok.length - 2].promptTokens;
+      return (delta >= 0 ? '+' : '') + fmt(delta) + ' к прошлому ходу';
+    });
+
+    /**
+     * Состав промпта одной полосой.
+     *
+     * Четыре части ведут себя по-разному, и в этом весь механизм дня: персона постоянна,
+     * конспект почти постоянен, вопрос мал, а расти мог бы только хвост — но он ограничен.
+     */
+    const stack = computed(() => {
+      const t = lastTurn.value;
+      if (!t) return [];
+      const parts = [
+        { part: 'persona', label: 'персона', chars: t.personaChars },
+        { part: 'summary', label: 'конспект', chars: t.summaryChars },
+        { part: 'tail', label: 'история дословно', chars: t.tailChars },
+        { part: 'question', label: 'вопрос', chars: t.questionChars },
+      ].filter(p => p.chars > 0);
+      const total = parts.reduce((sum, p) => sum + p.chars, 0) || 1;
+      return parts.map(p => ({ ...p, percent: +(p.chars / total * 100).toFixed(2) }));
+    });
+
+    const stackLabel = computed(() =>
+      'Состав промпта: ' + stack.value.map(p => `${p.label} ${Math.round(p.percent)}%`).join(', '));
+
+    /** Во сколько раз промпт короче полной истории. */
+    const ratio = computed(() => {
+      const t = lastTurn.value;
+      if (!t) return '1';
+      return (t.rawChars / Math.max(t.charsSent, 1)).toFixed(1);
+    });
+
+    /**
+     * Экономия за весь прогон — и сразу с её ценой.
+     *
+     * В числителе всё, что реально ушло модели, включая обращения суммаризатора:
+     * сжатие не бесплатно, и считать экономию без него значит считать половину счёта.
+     * В знаменателе — то, что ушло бы, если бы каждый ход отправлял всю переписку.
+     *
+     * Символы, а не токены: «сколько было бы» никто не отправлял, и счёта провайдера
+     * на эту величину не существует. Отрицательное число здесь возможно и означает,
+     * что сжатие пока не окупилось, — это честный результат, а не ошибка.
+     */
+    const savings = computed(() => {
+      const would = answers.value.reduce((sum, t) => sum + t.rawChars, 0);
+      const sent = turns.value.reduce((sum, t) => sum + t.charsSent, 0);
+      if (!would) return { percent: null, would: 0, sent };
+      return { percent: Math.round((1 - sent / would) * 100), would, sent };
+    });
+
+    /** Доля входа, зачтённая из кэша провайдера. */
+    const cachedShare = computed(() => {
+      const prompt = totals.value.promptTokens || 0;
+      if (!prompt) return 0;
+      return Math.round(totals.value.cachedPromptTokens / prompt * 100);
+    });
+
+    /**
+     * Через агрегатора или напрямую к провайдеру.
+     *
+     * Различие не косметическое: агрегатор проверяет лимит своей оценкой токенов
+     * и отказывает раньше, чем счёт площадки дойдёт до предела, — а прямой провайдер
+     * считает по тому же счёту, который потом и показывает.
+     */
+    const viaAggregator = computed(() => {
+      const provider = lastTurn.value?.provider;
+      return !!provider && provider !== 'deepseek' && provider !== '—' && provider !== 'неизвестен';
+    });
+
+    const costHint = computed(() => {
+      const source = lastTurn.value?.costSource;
+      if (!lastTurn.value) return 'ходов ещё не было';
+      if (source === 'PROVIDER') return 'списано провайдером';
+      if (source === 'PRICE_LIST') return 'оценка по прайсу';
+      return 'провайдер не сообщает';
+    });
+
+    /**
+     * Геометрия графика.
+     *
+     * Столбики — ходы диалога: сворачивания в этот ряд не попадают, у них нет номера
+     * в разговоре, а их цена показана отдельным числом и отдельной меткой под осью.
+     *
+     * Масштаб по вертикали подстраивается под данные, а не жёстко привязан к лимиту
+     * модели: у модели на 4095 токенов первые ходы занимают 5–8%, и на оси до лимита
+     * рост с 184 до 288 токенов был бы неразличим. Верхняя граница подписана числом,
+     * поэтому подстройка не обманывает.
+     *
+     * В масштаб входит и второй ряд — оценка «без сжатия». Из-за этого столбики в режиме
+     * SUMMARY выглядят низкими, и это правильно: разрыв между тем, что ушло, и тем, что
+     * ушло бы, — и есть предмет дня. Спрямить масштаб значило бы спрятать результат.
+     *
+     * Линия лимита появляется, когда до неё уже близко — раньше она только сплющивала бы
+     * столбики к нулю, а расстояние до лимита и без неё показывает шкала выше.
+     */
+    const chart = computed(() => {
+      const width = 300, height = 116, baseY = height - 14, top = 16;
+      const list = answers.value;
+      const limit = agent.value?.contextLimit || 1;
+      const room = agent.value?.contextForPrompt || limit;
+      const raws = list.map(rawEstimate);
+      const peak = Math.max(...list.map(t => t.promptTokens || 0), ...raws.map(v => v || 0), 1);
+
+      // Запас над самым высоким столбиком — четверть, но не выше лимита: выше он
+      // всё равно не бывает, а пустое место вверху графика ничего не сообщает.
+      const yMax = peak * 1.25 >= room ? limit : Math.round(peak * 1.25);
+      const scale = (tokens) => baseY - (baseY - top) * Math.min(tokens / yMax, 1);
+      const step = width / Math.max(list.length, 1);
+      const barWidth = Math.max(Math.min(step - 2, 26), 2);
+
+      const bars = list.map((turn, i) => {
+        const x = i * step + (step - barWidth) / 2;
+        const y = turn.promptTokens ? scale(turn.promptTokens) : baseY;
+        return {
+          number: turn.number, turn, x, w: barWidth, y, raw: raws[i],
+          h: Math.max(baseY - y, turn.promptTokens ? 2 : 0),
+          failed: !!turn.error,
+          truncated: !!turn.truncated,
+          title: turn.error
+            ? `Ход ${turn.number}: не удался — ${turn.error}`
+            : `Ход ${turn.number}: запрос ${fmt(turn.promptTokens)}, ответ ${fmt(turn.completionTokens)}, ${money(turn.costUsd)}`,
+        };
+      });
+
+      // Ряд «без сжатия» рисуем только когда он реально расходится со столбиками.
+      // В режиме RAW он лёг бы точно на их вершины и добавил бы к графику ноль смысла.
+      const gap = bars.some(b => b.raw && b.turn.promptTokens && b.raw > b.turn.promptTokens * 1.1);
+      const rawPoints = gap
+        ? bars.filter(b => b.raw).map(b => `${(b.x + b.w / 2).toFixed(1)},${scale(b.raw).toFixed(1)}`).join(' ')
+        : '';
+
+      // Метки сворачиваний: у правого края того хода, после которого история свернулась.
+      const byNumber = new Map(bars.map(b => [b.number, b]));
+      const folds = turns.value
+        .filter(t => t.kind === 'SUMMARY')
+        .map((t, i) => {
+          const bar = byNumber.get(t.number);
+          return bar ? { key: `${t.number}:${i}`, x: bar.x + bar.w } : null;
+        })
+        .filter(Boolean);
+
+      return {
+        width, height, baseY, yMax, bars, rawPoints, folds,
+        // Линии лимита и места под промпт рисуем только когда они попали в масштаб.
+        limitY: limit <= yMax ? scale(limit) : null,
+        roomY: room <= yMax ? scale(room) : null,
+      };
+    });
+
+    /** Подсказка идёт за столбиком, но не вылезает за правый край панели. */
+    const tipStyle = computed(() => {
+      if (!hover.value) return {};
+      const left = hover.value.x / chart.value.width * 100;
+      return { left: `min(${left}%, calc(100% - 160px))`, top: '0px' };
+    });
+
+    /** Накопленная цена: монотонная кривая, поэтому хватает спарклайна без осей. */
+    const spark = computed(() => {
+      const list = turns.value.filter(t => t.costUsd != null);
+      if (list.length < 2) return { points: '' };
+      let sum = 0;
+      const cumulative = list.map(t => (sum += t.costUsd));
+      const max = cumulative[cumulative.length - 1] || 1;
+      const points = cumulative
+        .map((value, i) => `${(i / (cumulative.length - 1) * 100).toFixed(2)},${(34 - value / max * 32).toFixed(2)}`)
+        .join(' ');
+      return { points };
+    });
+
+    async function scrollDown() {
+      await nextTick();
+      const box = thread.value;
+      if (box) box.scrollTop = box.scrollHeight;
+    }
+
+    function grow() {
+      const box = input.value;
+      if (!box) return;
+      box.style.height = 'auto';
+      box.style.height = `${Math.min(box.scrollHeight, 180)}px`;
+    }
+
+    function apply(view) {
+      agent.value = view.agent ?? agent.value;
+      messages.splice(0, messages.length, ...view.messages);
+      turns.value = view.turns;
+      totals.value = view.totals;
+      summary.value = view.summary ?? null;
+      summaries.value = view.summaries ?? [];
+      hover.value = null;
+    }
+
+    async function load() {
+      const res = await fetch('/api/chat');
+      apply(await res.json());
+      await scrollDown();
+    }
+
+    async function send() {
+      const text = draft.value.trim();
+      if (!text || sending.value) return;
+
+      error.value = '';
+      errorStatus.value = null;
+      errorBody.value = '';
+      draft.value = '';
+      grow();
+
+      // Показываем вопрос сразу, но помечаем его незавершённым: сохранён он будет
+      // только вместе с ответом.
+      const pending = reactive({ role: 'USER', content: text, at: new Date().toISOString(), pending: true });
+      messages.push(pending);
+      sending.value = true;
+      await scrollDown();
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errorStatus.value = data.providerStatus ?? null;
+          errorBody.value = data.providerBody ?? '';
+          throw new Error(data.error || `Сервер ответил ${res.status}`);
+        }
+        pending.pending = false;
+        messages.push(data.answer);
+        // Расход принимаем списком целиком, а не дописываем одну запись: ход мог добавить
+        // не одну — после ответа история могла свернуться, и это ещё одно обращение
+        // к модели со своей ценой.
+        turns.value = data.turns;
+        totals.value = data.totals;
+        summary.value = data.summary ?? null;
+        summaries.value = data.summaries ?? [];
+        // Настройки берём из ответа целиком: бэкенд могли перезапустить с другим лимитом
+        // или другой моделью, и вкладка об этом иначе не узнает.
+        //
+        // Но только если они пришли. Страница живёт долго и вполне может оказаться новее
+        // бэкенда — статику Spring отдаёт с диска, а классы у запущенного процесса свои.
+        // Тогда поле отсутствует, и затирать им настройки нельзя: без них интерфейс
+        // считает, что диалог ещё не загружен, и прячет всё.
+        agent.value = data.agent ?? { ...agent.value, remembered: data.remembered };
+      } catch (e) {
+        // Переписка не изменилась: в базе не появилось ни вопроса, ни ответа, значит
+        // и в ленте их быть не должно. Текст возвращаем в поле — переспрашивать не придётся.
+        messages.splice(messages.indexOf(pending), 1);
+        draft.value = text;
+        error.value = e.message;
+        // А вот расход изменился: неудачный ход записан в базу, и его надо забрать —
+        // на графике он должен появиться крестиком.
+        try {
+          const state = await (await fetch('/api/chat')).json();
+          agent.value = state.agent ?? agent.value;
+          turns.value = state.turns;
+          totals.value = state.totals;
+          summary.value = state.summary ?? null;
+          summaries.value = state.summaries ?? [];
+        } catch { /* состояние подтянется при следующем ходе */ }
+      } finally {
+        sending.value = false;
+        await scrollDown();
+        grow();
+      }
+    }
+
+    async function forget() {
+      if (!confirm('Стереть переписку, конспекты и весь измеренный расход? Безвозвратно.')) return;
+      error.value = '';
+      errorStatus.value = null;
+      errorBody.value = '';
+      const res = await fetch('/api/chat', { method: 'DELETE' });
+      apply(await res.json());
+    }
+
+    onMounted(load);
+
+    return {
+      agent, messages, turns, totals, summary, summaries, draft, sending, error, errorStatus, errorBody, hover,
+      thread, input, memoryLine, lastTurn, lastPrompt, lastDelta, fillPercent, fillTone,
+      costHint, chart, tipStyle, spark,
+      answers, older, foldedCount, foldBoundary, isFolded, stack, stackLabel, ratio, savings,
+      cachedShare, viaAggregator,
+      send, forget, grow, markdown, time, accusative, fmt, money, short, plural,
+    };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

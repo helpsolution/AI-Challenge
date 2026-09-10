@@ -1,0 +1,12 @@
+.env
+build/
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+.idea/
+*.log
+# База диалога — состояние машины, а не проекта. Папка остаётся (.gitkeep), файлы нет.
+data/*.db
+data/*.db-journal
+
+# Кэш инкрементальной компиляции Kotlin.
+.kotlin/
