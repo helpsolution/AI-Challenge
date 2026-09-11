@@ -1,0 +1,817 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Advent — стратегии управления контекстом</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  /* Локальный CSS — только раскладка и виджеты, которых нет в дизайн-системе. */
+  [v-cloak] { display: none; }
+
+  .page { width: 100%; max-width: 1440px; margin-inline: auto; padding-inline: var(--space-6); }
+  .page-body { padding-block: var(--space-6) var(--space-10); }
+  .icon { width: 18px; height: 18px; stroke-width: 1.75; }
+
+  .nav { display: flex; align-items: center; gap: var(--space-4); height: 64px;
+         border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
+  .nav-brand { display: flex; align-items: center; gap: var(--space-3); font-weight: 600; }
+  .nav-mark { width: 28px; height: 28px; border-radius: var(--radius-md); background: var(--color-primary);
+              color: #fff; display: grid; place-items: center; font-size: 0.8125rem; font-weight: 700; }
+  .nav-spacer { flex: 1; }
+
+  /* Три колонки: список диалогов, сам диалог, его замеры. Замеры рядом с лентой
+     намеренно — иначе «в промпт вошло 6 из 22» не с чем связать глазами. */
+  .layout { display: grid; grid-template-columns: 264px minmax(0, 1fr) 320px; gap: var(--space-5); align-items: start; }
+  @media (max-width: 1280px) { .layout { grid-template-columns: 240px minmax(0, 1fr); } .metrics { grid-column: 1 / -1; } }
+  @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+  .stack { display: grid; gap: var(--space-3); }
+  .row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+  .row-tight { display: flex; align-items: center; gap: var(--space-2); }
+
+  /* ---- Список диалогов ---- */
+  .sessions { padding: 0; overflow: hidden; }
+  .sessions-head { padding: var(--space-4); border-bottom: 1px solid var(--color-border); display: grid; gap: var(--space-3); }
+  .sessions-list { max-height: calc(100vh - 260px); overflow-y: auto; }
+  .session { width: 100%; text-align: left; border: 0; background: none; cursor: pointer; display: grid; gap: 4px;
+             padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-border); font: inherit; }
+  .session:hover { background: var(--color-elevated); }
+  .session.is-active { background: var(--color-elevated); box-shadow: inset 3px 0 0 var(--color-primary); }
+  .session.is-branch { padding-left: var(--space-6); }
+  .session-title { font-size: 0.875rem; font-weight: 500; color: var(--color-text-primary);
+                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-meta { font-size: 0.75rem; color: var(--color-text-muted); font-family: var(--font-mono); }
+
+  /* ---- Чат ---- */
+  .chat { padding: 0; display: flex; flex-direction: column; height: calc(100vh - 64px - var(--space-6) - var(--space-10)); min-height: 560px; }
+  .chat-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: center;
+               padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-border); }
+  .thread { flex: 1; overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+  .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: end;
+              padding: var(--space-4) var(--space-5); border-top: 1px solid var(--color-border); }
+  .composer .textarea { height: auto; min-height: 44px; max-height: 180px; resize: none; padding-block: 10px; }
+  @media (max-width: 900px) { .chat { height: auto; min-height: 0; } .thread { max-height: 60vh; } }
+
+  .empty { margin: auto; text-align: center; max-width: 40ch; color: var(--color-text-muted); }
+
+  .msg { max-width: 82%; display: grid; gap: var(--space-1); }
+  .msg[data-role="USER"] { align-self: flex-end; }
+  .msg[data-role="ASSISTANT"], .msg[data-role="ERROR"] { align-self: flex-start; }
+  /* Сообщение вне окна — то, чего модель на следующем ходу уже не увидит. Гасим,
+     а не прячем: смысл в том, чтобы граница памяти была видна прямо в ленте. */
+  .msg.is-forgotten { opacity: 0.42; }
+  .msg-meta { display: flex; gap: var(--space-2); align-items: baseline; font-size: 0.75rem; color: var(--color-text-muted); }
+  .msg[data-role="USER"] .msg-meta { justify-content: flex-end; }
+  .msg-meta .who { font-weight: 500; color: var(--color-text-secondary); }
+  .msg-meta .fork { border: 0; background: none; padding: 0; font: inherit; font-size: 0.75rem; cursor: pointer;
+                    color: var(--color-primary); opacity: 0; transition: opacity .12s; }
+  .msg:hover .fork { opacity: 1; }
+  .bubble { padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg); border: 1px solid var(--color-border);
+            font-size: 0.9375rem; line-height: 1.55; color: var(--color-text-primary); overflow-wrap: break-word; }
+  .msg[data-role="USER"] .bubble { background: var(--color-elevated); border-color: var(--color-border-strong);
+                                   white-space: pre-wrap; border-bottom-right-radius: var(--radius-sm); }
+  .msg[data-role="ASSISTANT"] .bubble { background: var(--color-surface); border-bottom-left-radius: var(--radius-sm); }
+  .msg[data-role="ERROR"] .bubble { background: var(--color-surface); border-color: var(--color-danger); color: var(--color-danger); font-size: 0.8125rem; }
+  .msg.is-pending .bubble { opacity: 0.65; }
+
+  .bubble p { margin: 0 0 var(--space-3); }
+  .bubble > :last-child { margin-bottom: 0; }
+  .bubble h4 { font-size: 1rem; font-weight: 600; margin: var(--space-3) 0 var(--space-2); }
+  .bubble ul, .bubble ol { margin: 0 0 var(--space-3); padding-left: var(--space-5); }
+  .bubble li { margin-bottom: var(--space-1); }
+  .bubble code { font-family: var(--font-mono); font-size: 0.875em; background: var(--color-elevated);
+                 border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 1px 4px; }
+  .bubble strong { font-weight: 600; }
+
+  .typing { display: inline-flex; gap: 4px; align-items: center; height: 1.4em; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--color-text-muted); animation: typing 1.2s infinite ease-in-out; }
+  .typing i:nth-child(2) { animation-delay: .2s; }
+  .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes typing { 0%, 60%, 100% { opacity: .25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+
+  /* ---- Панель замеров ---- */
+  .metrics { padding: 0; }
+  .metrics-head { padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-border); }
+  .metrics-body { padding: var(--space-4) var(--space-5); display: grid; gap: var(--space-5); }
+  .nums { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+  .num-label { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: .04em; color: var(--color-text-muted); }
+  .num-value { font-family: var(--font-mono); font-size: 1.0625rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .num-hint { font-size: 0.75rem; color: var(--color-text-muted); }
+
+  /* Столбики токенов по ходам: главный график дня. Если окно работает, они выходят
+     на полку вместо того, чтобы расти. */
+  .chart { display: flex; align-items: flex-end; gap: 3px; height: 96px; padding-top: var(--space-2); }
+  .bar { flex: 1; min-width: 3px; border-radius: 2px 2px 0 0; background: var(--color-info); position: relative; }
+  .bar[data-dropped="true"] { background: var(--color-primary); }
+  .bar[data-failed="true"] { background: var(--color-danger); }
+  .bar:hover { filter: brightness(1.2); }
+  .chart-axis { display: flex; justify-content: space-between; font-size: 0.6875rem; color: var(--color-text-muted);
+                font-family: var(--font-mono); padding-top: 4px; }
+
+  /* ---- Сравнение ---- */
+  .compare { display: grid; gap: var(--space-5); }
+  .runners { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); }
+  .table-wrap { overflow-x: auto; }
+  table.runs { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+  table.runs th, table.runs td { padding: var(--space-3); border-bottom: 1px solid var(--color-border); text-align: left; vertical-align: top; }
+  table.runs th { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: .04em; color: var(--color-text-muted); font-weight: 600; white-space: nowrap; }
+  table.runs td.n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.runs tbody tr:hover { background: var(--color-elevated); }
+
+  /* Полоска проверок по шагам сценария. Слева — самые ранние детали, справа — поздние.
+     Красный хвост слева и есть граница памяти, увиденная глазами. */
+  .checks { display: flex; gap: 3px; }
+  .check-dot { width: 22px; height: 22px; border-radius: var(--radius-sm); display: grid; place-items: center; cursor: help;
+               font-size: 0.6875rem; font-family: var(--font-mono); font-weight: 600; }
+  .check-dot[data-state="pass"] { background: var(--color-success-soft); color: var(--color-success); }
+  .check-dot[data-state="fail"] { background: var(--color-danger-soft); color: var(--color-danger); }
+  .check-dot[data-state="halluc"] { background: var(--color-warning-soft); color: var(--color-warning); }
+
+  .detail { display: grid; gap: var(--space-3); padding: var(--space-4); background: var(--color-elevated);
+            border-radius: var(--radius-md); border: 1px solid var(--color-border); }
+  .detail-check { display: grid; gap: 4px; padding-bottom: var(--space-3); border-bottom: 1px solid var(--color-border); }
+  .detail-check:last-child { border-bottom: 0; padding-bottom: 0; }
+  .detail-q { font-weight: 500; font-size: 0.875rem; }
+  .detail-a { font-size: 0.875rem; color: var(--color-text-secondary); white-space: pre-wrap; }
+
+  /* Досье: то, что стратегия отправляет модели вместо выброшенной истории.
+     Пока его не видно, «агент помнит дедлайн» остаётся утверждением на веру. */
+  .facts { display: grid; gap: 6px; }
+  .fact { display: grid; grid-template-columns: auto 1fr; gap: var(--space-2); align-items: baseline;
+          padding: 6px var(--space-3); background: var(--color-elevated); border: 1px solid var(--color-border);
+          border-radius: var(--radius-sm); font-size: 0.8125rem; }
+  .fact-key { font-weight: 600; color: var(--color-text-primary); white-space: nowrap; }
+  .fact-value { color: var(--color-text-secondary); overflow-wrap: anywhere; }
+  .fact-turn { font-family: var(--font-mono); font-size: 0.6875rem; color: var(--color-text-muted); }
+
+  .progress { height: 6px; border-radius: 3px; background: var(--color-elevated); overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--color-primary); transition: width .3s; }
+
+  .alert { border: 1px solid var(--color-danger); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4);
+           color: var(--color-danger); font-size: 0.875rem; background: var(--color-surface); }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <header class="nav">
+    <div class="page row">
+      <div class="nav-brand">
+        <span class="nav-mark">10</span>
+        <span>Стратегии управления контекстом</span>
+      </div>
+      <span class="nav-spacer"></span>
+      <span v-if="agent" class="chip" data-tone="neutral">{{ agent.model }}</span>
+      <div class="tabs">
+        <button class="tab" :class="{ 'is-active': tab === 'chat' }" @click="showTab('chat')">Диалоги</button>
+        <button class="tab" :class="{ 'is-active': tab === 'compare' }" @click="showTab('compare')">Сравнение</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="page page-body">
+
+    <!-- ==================== ДИАЛОГИ ==================== -->
+    <div v-if="tab === 'chat'" class="layout">
+
+      <aside class="card sessions">
+        <div class="sessions-head">
+          <div class="field">
+            <label class="field-label">Стратегия нового диалога</label>
+            <select class="select" v-model="newStrategy">
+              <option v-for="s in (agent?.strategies || [])" :key="s" :value="s">{{ strategyName(s) }}</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label">Окно, сообщений</label>
+            <input class="input" type="number" min="2" max="200" v-model.number="newWindow">
+            <span class="field-help">Сколько последних сообщений уходит модели дословно</span>
+          </div>
+          <button class="btn btn-primary btn-sm" @click="createSession" :disabled="creating">Новый диалог</button>
+        </div>
+        <div class="sessions-list">
+          <button v-for="s in sessions" :key="s.session.id" class="session"
+                  :class="{ 'is-active': s.session.id === currentId, 'is-branch': s.session.parentId }"
+                  @click="openSession(s.session.id)">
+            <span class="session-title">{{ s.session.parentId ? '↳ ' : '' }}{{ s.session.title }}</span>
+            <span class="session-meta">{{ strategyShort(s.session.strategy) }} · окно {{ s.session.windowSize }} · {{ s.messages }} сообщ.</span>
+          </button>
+          <p v-if="!sessions.length" class="t-body-sm t-muted" style="padding: var(--space-4)">
+            Диалогов пока нет.
+          </p>
+        </div>
+      </aside>
+
+      <section class="card chat">
+        <template v-if="current">
+          <div class="chat-head">
+            <div>
+              <h2 class="t-title-md" style="margin:0">{{ current.session.title }}</h2>
+              <p class="t-body-sm t-muted" style="margin:2px 0 0">
+                {{ strategyName(current.session.strategy) }} · окно {{ current.session.windowSize }} ·
+                в памяти {{ current.messages.length }} {{ plural(current.messages.length, 'сообщение', 'сообщения', 'сообщений') }},
+                модель видит последние {{ visibleCount }}
+                <template v-if="current.session.parentId">
+                  · ветка от диалога №{{ current.session.parentId }} после {{ current.session.forkedAfter }} сообщ.
+                </template>
+              </p>
+            </div>
+            <div class="row-tight">
+              <span v-if="current.branches.length" class="chip" data-tone="info">веток: {{ current.branches.length }}</span>
+              <button class="btn btn-secondary btn-sm" @click="removeSession(current.session.id)">Удалить</button>
+            </div>
+          </div>
+
+          <div class="thread" ref="thread">
+            <div v-if="!current.messages.length" class="empty">
+              <p class="t-body-md">Диалог пуст.</p>
+              <p class="t-body-sm">Назовите пару конкретных деталей, задайте несколько вопросов — и следите,
+                как ранние сообщения гаснут, выходя за окно.</p>
+            </div>
+
+            <div v-for="(m, i) in current.messages" :key="m.id" class="msg"
+                 :data-role="m.role" :class="{ 'is-forgotten': i < forgottenBefore }">
+              <div class="msg-meta">
+                <span class="who">{{ m.role === 'USER' ? 'Вы' : agent?.name }}</span>
+                <span>{{ time(m.at) }}</span>
+                <!-- Ветвиться можно только после ответа: точка отделения посреди пары
+                     «вопрос-ответ» оставила бы ветку с висящим вопросом. -->
+                <button v-if="m.role === 'ASSISTANT'" class="fork" @click="fork(m.id)"
+                        title="Продолжить разговор с этого места в отдельной ветке">ветка отсюда</button>
+              </div>
+              <div v-if="m.role === 'ASSISTANT'" class="bubble" v-html="md(m.content)"></div>
+              <div v-else class="bubble">{{ m.content }}</div>
+            </div>
+
+            <div v-if="pending" class="msg is-pending" data-role="USER">
+              <div class="msg-meta"><span class="who">Вы</span></div>
+              <div class="bubble">{{ pending }}</div>
+            </div>
+            <div v-if="sending" class="msg" data-role="ASSISTANT">
+              <div class="msg-meta"><span class="who">{{ agent?.name }}</span></div>
+              <div class="bubble"><span class="typing"><i></i><i></i><i></i></span></div>
+            </div>
+            <div v-if="error" class="msg" data-role="ERROR">
+              <div class="bubble">
+                <strong>{{ error }}</strong>
+                <div v-if="errorBody" class="t-mono-sm" style="margin-top:8px; white-space:pre-wrap">{{ errorBody }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="composer">
+            <textarea class="input textarea" rows="1" v-model="draft" :disabled="sending"
+                      placeholder="Сообщение… Enter — отправить, Shift+Enter — перенос строки"
+                      @keydown.enter.exact.prevent="send"></textarea>
+            <button class="btn btn-primary" @click="send" :disabled="sending || !draft.trim()">Отправить</button>
+          </div>
+        </template>
+
+        <div v-else class="empty" style="padding: var(--space-10)">
+          <p class="t-body-md">Диалог не выбран.</p>
+          <p class="t-body-sm">Создайте новый слева или откройте прогон сценария из вкладки «Сравнение».</p>
+        </div>
+      </section>
+
+      <aside class="card metrics" v-if="current">
+        <div class="metrics-head">
+          <h3 class="t-title-sm" style="margin:0">Замеры диалога</h3>
+          <p class="t-body-sm t-muted" style="margin:2px 0 0">Токены считает провайдер — это счёт, а не оценка</p>
+        </div>
+        <div class="metrics-body">
+          <div class="nums">
+            <div>
+              <div class="num-label">Промпт, посл. ход</div>
+              <div class="num-value">{{ fmt(lastTurn?.promptTokens) }}</div>
+              <div class="num-hint" v-if="lastTurn">из них кэш {{ fmt(lastTurn.cachedPromptTokens) }}</div>
+            </div>
+            <div>
+              <div class="num-label">Вошло / отброшено</div>
+              <div class="num-value">{{ lastTurn ? lastTurn.includedMessages : '—' }} / {{ lastTurn ? lastTurn.droppedMessages : '—' }}</div>
+              <div class="num-hint">сообщений истории</div>
+            </div>
+            <div>
+              <div class="num-label">Токенов всего</div>
+              <div class="num-value">{{ fmt(current.totals.totalTokens) }}</div>
+              <div class="num-hint">за {{ current.totals.turns }} {{ plural(current.totals.turns, 'ход', 'хода', 'ходов') }}</div>
+            </div>
+            <div>
+              <div class="num-label">Цена ответов</div>
+              <div class="num-value">{{ cost(current.totals.costUsd) }}</div>
+              <div class="num-hint">оценка по прайсу</div>
+            </div>
+            <!-- Отдельной плиткой, а не прибавкой к цене ответов: «сколько стоил ответ»
+                 и «сколько стоило помнить» — разные вопросы, и весь смысл сравнения
+                 стратегий в их разнице. -->
+            <div v-if="current.totals.upkeepPromptTokens">
+              <div class="num-label">Память стоила</div>
+              <div class="num-value">{{ cost(current.totals.upkeepCostUsd) }}</div>
+              <div class="num-hint">
+                {{ fmt(current.totals.upkeepPromptTokens + current.totals.upkeepCompletionTokens) }} токенов на обновление
+              </div>
+            </div>
+            <div v-if="lastTurn && lastTurn.upkeep">
+              <div class="num-label">Посл. обновление</div>
+              <div class="num-value" style="font-size:0.875rem">{{ lastTurn.upkeep.note }}</div>
+              <div class="num-hint" :style="lastTurn.upkeep.error ? 'color:var(--color-danger)' : ''">
+                {{ lastTurn.upkeep.error || (lastTurn.upkeep.latencyMs + ' мс') }}
+              </div>
+            </div>
+          </div>
+
+          <div v-if="current.facts.length">
+            <div class="num-label" style="margin-bottom: var(--space-2)">
+              Досье — {{ current.facts.length }} {{ plural(current.facts.length, 'факт', 'факта', 'фактов') }}
+            </div>
+            <div class="facts">
+              <div v-for="f in current.facts" :key="f.key" class="fact">
+                <span class="fact-key">{{ f.key }}</span>
+                <span class="fact-value">{{ f.value }} <span class="fact-turn">ход {{ f.turnNumber }}</span></span>
+              </div>
+            </div>
+            <p class="t-body-sm t-muted" style="margin: var(--space-2) 0 0">
+              Это уходит модели целиком на каждом ходу — вместо истории, выброшенной окном.
+            </p>
+          </div>
+
+          <div v-if="successfulTurns.length">
+            <div class="num-label">Токенов в запросе по ходам</div>
+            <div class="chart">
+              <div v-for="t in successfulTurns" :key="t.number" class="bar"
+                   :data-dropped="t.droppedMessages > 0"
+                   :style="{ height: barHeight(t) }"
+                   :title="`ход ${t.number}: ${t.promptTokens} токенов, вошло ${t.includedMessages}, отброшено ${t.droppedMessages}`"></div>
+            </div>
+            <div class="chart-axis">
+              <span>ход 1</span>
+              <span>ход {{ successfulTurns[successfulTurns.length - 1].number }}</span>
+            </div>
+            <p class="t-body-sm t-muted" style="margin: var(--space-2) 0 0">
+              Синие столбики — ходы, где стратегия уже что-то выбросила. Полка вместо роста
+              и есть то, ради чего окно нужно.
+            </p>
+          </div>
+
+          <div v-if="current.branches.length">
+            <div class="num-label" style="margin-bottom: var(--space-2)">Ветки этого диалога</div>
+            <div class="stack">
+              <button v-for="b in current.branches" :key="b.id" class="btn btn-secondary btn-sm"
+                      style="justify-content:flex-start" @click="openSession(b.id)">
+                {{ b.title }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- ==================== СРАВНЕНИЕ ==================== -->
+    <div v-else class="compare">
+
+      <section class="card" v-if="scenario">
+        <div class="card-body">
+          <h2 class="t-title-md" style="margin:0 0 var(--space-2)">{{ scenario.title }}</h2>
+          <p class="t-body-sm t-muted" style="margin:0 0 var(--space-4)">{{ scenario.description }}</p>
+          <div class="row" style="margin-bottom: var(--space-4)">
+            <span class="chip" data-tone="neutral">{{ scenario.steps.length }} реплик</span>
+            <span class="chip" data-tone="neutral">{{ scenario.checks.length }} проверок</span>
+            <span class="chip" data-tone="neutral">{{ scenario.steps.length + scenario.checks.length }} обращений к модели</span>
+          </div>
+
+          <div class="field" style="max-width:220px; margin-bottom: var(--space-4)">
+            <label class="field-label">Окно для прогона</label>
+            <input class="input" type="number" min="2" max="200" v-model.number="runWindow">
+            <span class="field-help">Просторное окно уравняет стратегии: терять станет нечего</span>
+          </div>
+
+          <div class="runners">
+            <button v-for="s in (agent?.strategies || [])" :key="s" class="btn btn-primary"
+                    @click="startRun(s)" :disabled="busy(s)">
+              {{ busy(s) ? 'Идёт прогон…' : 'Прогнать: ' + strategyName(s) }}
+            </button>
+          </div>
+
+          <div v-for="a in active" :key="a.sessionId" style="margin-top: var(--space-4)">
+            <div class="row" style="justify-content:space-between; margin-bottom:6px">
+              <span class="t-body-sm">{{ strategyName(a.strategy) }}, окно {{ a.windowSize }}</span>
+              <span class="t-mono-sm t-muted">{{ a.completed }} / {{ a.total }}</span>
+            </div>
+            <div class="progress"><div class="progress-fill" :style="{ width: (a.completed / a.total * 100) + '%' }"></div></div>
+          </div>
+
+          <p v-if="runError" class="alert" style="margin-top: var(--space-4)">{{ runError }}</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-body">
+          <h2 class="t-title-md" style="margin:0 0 var(--space-2)">Результаты прогонов</h2>
+          <p class="t-body-sm t-muted" style="margin:0 0 var(--space-4)">
+            Одна оценка на всё намеренно не считается: удержание деталей и расход тянут в разные
+            стороны, и «лучшая стратегия» — вопрос без ответа. Здесь показаны обе стороны сделки.
+          </p>
+
+          <p v-if="!runs.length" class="t-body-sm t-muted">Прогонов ещё не было.</p>
+
+          <div v-else class="table-wrap">
+            <table class="runs">
+              <thead>
+                <tr>
+                  <th>Стратегия</th>
+                  <th>Окно</th>
+                  <th>Удержание</th>
+                  <th>Проверки по шагам сценария</th>
+                  <th>Ранняя<br>деталь</th>
+                  <th>Вход</th>
+                  <th>Кэш</th>
+                  <th>Выход</th>
+                  <th>Память:<br>токены</th>
+                  <th>Цена<br>ответов</th>
+                  <th>Цена<br>памяти</th>
+                  <th>Задержка</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <template v-for="r in runs" :key="r.id">
+                  <tr>
+                    <td>
+                      <strong>{{ strategyName(r.strategy) }}</strong>
+                      <div v-if="r.error" class="t-body-sm" style="color:var(--color-danger)">оборвался: {{ r.error }}</div>
+                    </td>
+                    <td class="n">{{ r.windowSize }}</td>
+                    <td class="n">
+                      <span class="chip" :data-tone="retentionTone(r)">{{ r.passed }} / {{ r.checks.length }}</span>
+                    </td>
+                    <td>
+                      <div class="checks">
+                        <span v-for="c in byStep(r)" :key="c.id" class="check-dot"
+                              :data-state="c.hallucinated.length ? 'halluc' : (c.passed ? 'pass' : 'fail')"
+                              :title="`шаг ${c.plantedAtStep}: ${c.question}\n${c.passed ? 'помнит' : 'не найдено: ' + c.missing.join(', ')}${c.hallucinated.length ? '\nвыдумал: ' + c.hallucinated.join(', ') : ''}`">
+                          {{ c.plantedAtStep }}
+                        </span>
+                      </div>
+                    </td>
+                    <td class="n">{{ r.earliestRemembered ? 'шаг ' + r.earliestRemembered : '—' }}</td>
+                    <td class="n">{{ fmt(r.totals.promptTokens) }}</td>
+                    <td class="n">{{ fmt(r.totals.cachedPromptTokens) }}</td>
+                    <td class="n">{{ fmt(r.totals.completionTokens) }}</td>
+                    <td class="n">{{ upkeepTokens(r) ? fmt(upkeepTokens(r)) : '—' }}</td>
+                    <td class="n">{{ cost(r.totals.costUsd) }}</td>
+                    <td class="n">
+                      {{ r.totals.upkeepCostUsd == null ? '—' : cost(r.totals.upkeepCostUsd) }}
+                      <div v-if="r.totals.upkeepFailures" class="t-body-sm" style="color:var(--color-warning)">
+                        сбоев: {{ r.totals.upkeepFailures }}
+                      </div>
+                    </td>
+                    <td class="n">{{ r.totals.medianLatencyMs }} мс</td>
+                    <td>
+                      <button class="btn btn-tertiary btn-sm" @click="expanded = expanded === r.id ? null : r.id">
+                        {{ expanded === r.id ? 'свернуть' : 'ответы' }}
+                      </button>
+                    </td>
+                  </tr>
+                  <tr v-if="expanded === r.id">
+                    <td colspan="13">
+                      <div class="detail">
+                        <p class="t-body-sm t-muted" style="margin:0">
+                          Каждый контрольный вопрос задан в отдельной ветке от конца диалога: спроси их подряд —
+                          и к последнему вопросу окно было бы забито ответами на предыдущие.
+                          <template v-if="r.probeTotals">
+                            Сами проверки обошлись в {{ fmt(r.probeTotals.totalTokens + upkeepTokens({ totals: r.probeTotals })) }}
+                            токенов — это цена измерения, и в таблицу она не входит.
+                          </template>
+                          <button class="btn btn-tertiary btn-sm" @click="openSessionTab(r.sessionId)">открыть диалог прогона</button>
+                        </p>
+                        <div v-for="c in byStep(r)" :key="c.id" class="detail-check">
+                          <div class="row-tight">
+                            <span class="check-dot" :data-state="c.hallucinated.length ? 'halluc' : (c.passed ? 'pass' : 'fail')">{{ c.plantedAtStep }}</span>
+                            <span class="detail-q">{{ c.question }}</span>
+                          </div>
+                          <div class="detail-a">{{ c.answer }}</div>
+                          <div class="row-tight">
+                            <span v-if="c.missing.length" class="chip" data-tone="danger">не нашлось: {{ c.missing.join(', ') }}</span>
+                            <span v-if="c.hallucinated.length" class="chip" data-tone="warning">выдумал: {{ c.hallucinated.join(', ') }}</span>
+                            <span v-if="c.passed" class="chip" data-tone="success">помнит</span>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, ref, computed, nextTick, onMounted } = Vue;
+
+/* ---------- markdown: минимальный рендерер, весь текст экранируется до разметки ---------- */
+const ESCAPE = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const escapeHtml = (text) => text.replace(/[&<>"']/g, c => ESCAPE[c]);
+
+function inlineMd(text) {
+  return text
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+}
+
+function md(raw) {
+  const text = escapeHtml(raw || '');
+  const out = [];
+  let list = null, para = [];
+  const flushList = () => { if (list) { out.push(`<${list.tag}>${list.items.map(i => `<li>${i}</li>`).join('')}</${list.tag}>`); list = null; } };
+  const flushPara = () => { if (para.length) { out.push(`<p>${para.join('<br>')}</p>`); para = []; } };
+  for (const raw of text.split('\n')) {
+    const line = raw.trimEnd();
+    if (!line.trim()) { flushList(); flushPara(); continue; }
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) { flushList(); flushPara(); out.push(`<h4>${inlineMd(heading[1])}</h4>`); continue; }
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
+    const numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    if (bullet || numbered) {
+      flushPara();
+      const tag = bullet ? 'ul' : 'ol';
+      if (!list || list.tag !== tag) { flushList(); list = { tag, items: [] }; }
+      list.items.push(inlineMd(bullet ? bullet[1] : numbered[1]));
+      continue;
+    }
+    flushList();
+    para.push(inlineMd(line));
+  }
+  flushList(); flushPara();
+  return out.join('');
+}
+
+/* ---------- обращения к серверу ---------- */
+async function api(path, options) {
+  const response = await fetch(path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    const e = new Error(body?.error || `Ошибка ${response.status}`);
+    e.body = body?.providerBody;
+    throw e;
+  }
+  return body;
+}
+
+const STRATEGY_NAMES = {
+  SLIDING_WINDOW: 'Скользящее окно',
+  FACTS: 'Факты + окно',
+  BRANCHING: 'Ветвление',
+};
+
+createApp({
+  setup() {
+    // Вкладка живёт в адресе: на таблицу сравнения удобно дать ссылку, а перезагрузка
+    // страницы посреди прогона не должна выбрасывать обратно в диалоги.
+    const tab = ref(location.hash === '#compare' ? 'compare' : 'chat');
+    const showTab = (name) => { tab.value = name; location.hash = name; };
+    const agent = ref(null);
+
+    /* --- диалоги --- */
+    const sessions = ref([]);
+    const current = ref(null);
+    const currentId = ref(null);
+    const draft = ref('');
+    const pending = ref('');
+    const sending = ref(false);
+    const creating = ref(false);
+    const error = ref('');
+    const errorBody = ref('');
+    const thread = ref(null);
+    const newStrategy = ref('SLIDING_WINDOW');
+    const newWindow = ref(6);
+
+    /* --- сравнение --- */
+    const scenario = ref(null);
+    const runs = ref([]);
+    const active = ref([]);
+    const runWindow = ref(6);
+    const runError = ref('');
+    const expanded = ref(null);
+
+    const strategyName = (s) => STRATEGY_NAMES[s] || s;
+    const strategyShort = (s) => ({ SLIDING_WINDOW: 'окно', FACTS: 'факты', BRANCHING: 'ветвление' })[s] || s;
+    const plural = (n, one, few, many) => {
+      const m10 = n % 10, m100 = n % 100;
+      if (m10 === 1 && m100 !== 11) return one;
+      if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+      return many;
+    };
+    const fmt = (n) => n == null ? '—' : n.toLocaleString('ru-RU');
+    const cost = (c) => c == null ? '—' : '$' + c.toFixed(4);
+    const time = (iso) => new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+    const successfulTurns = computed(() => (current.value?.turns || []).filter(t => !t.error));
+    const lastTurn = computed(() => [...successfulTurns.value].reverse()[0] || null);
+    const maxPrompt = computed(() => Math.max(1, ...successfulTurns.value.map(t => t.promptTokens || 0)));
+    const barHeight = (t) => Math.max(3, Math.round((t.promptTokens || 0) / maxPrompt.value * 96)) + 'px';
+
+    /**
+     * Сколько последних сообщений модель увидит на следующем ходу.
+     *
+     * Считается по настройке сессии, а не по прошлому ходу: после ответа история выросла,
+     * и граница окна уже сдвинулась. Показывать вчерашнюю границу было бы хуже, чем
+     * не показывать никакой.
+     */
+    const visibleCount = computed(() => {
+      if (!current.value) return 0;
+      return Math.min(current.value.messages.length, current.value.session.windowSize);
+    });
+    const forgottenBefore = computed(() => {
+      if (!current.value) return 0;
+      return Math.max(0, current.value.messages.length - current.value.session.windowSize);
+    });
+
+    async function loadAgent() {
+      agent.value = await api('/api/agent');
+      newStrategy.value = agent.value.defaultStrategy;
+      newWindow.value = agent.value.defaultWindowSize;
+      runWindow.value = agent.value.defaultWindowSize;
+    }
+
+    async function loadSessions() {
+      sessions.value = await api('/api/sessions');
+    }
+
+    async function openSession(id) {
+      currentId.value = id;
+      current.value = await api(`/api/sessions/${id}`);
+      error.value = '';
+      errorBody.value = '';
+      await nextTick();
+      if (thread.value) thread.value.scrollTop = thread.value.scrollHeight;
+    }
+
+    function openSessionTab(id) {
+      showTab('chat');
+      openSession(id);
+    }
+
+    async function createSession() {
+      creating.value = true;
+      try {
+        const session = await api('/api/sessions', {
+          method: 'POST',
+          body: JSON.stringify({ strategy: newStrategy.value, windowSize: newWindow.value }),
+        });
+        await loadSessions();
+        await openSession(session.id);
+      } catch (e) {
+        error.value = e.message;
+      } finally {
+        creating.value = false;
+      }
+    }
+
+    async function removeSession(id) {
+      await api(`/api/sessions/${id}`, { method: 'DELETE' });
+      current.value = null;
+      currentId.value = null;
+      await loadSessions();
+    }
+
+    async function send() {
+      const text = draft.value.trim();
+      if (!text || sending.value || !currentId.value) return;
+      draft.value = '';
+      pending.value = text;
+      sending.value = true;
+      error.value = '';
+      errorBody.value = '';
+      await nextTick();
+      if (thread.value) thread.value.scrollTop = thread.value.scrollHeight;
+      try {
+        await api(`/api/sessions/${currentId.value}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({ text }),
+        });
+        await openSession(currentId.value);
+        await loadSessions();
+      } catch (e) {
+        error.value = e.message;
+        errorBody.value = e.body || '';
+        // Вопрос возвращаем в поле: ход не состоялся, история не изменилась,
+        // и терять набранный текст из-за чужой ошибки незачем.
+        draft.value = text;
+      } finally {
+        pending.value = '';
+        sending.value = false;
+      }
+    }
+
+    async function fork(afterMessageId) {
+      const branch = await api(`/api/sessions/${currentId.value}/fork`, {
+        method: 'POST',
+        body: JSON.stringify({ afterMessageId }),
+      });
+      await loadSessions();
+      await openSession(branch.id);
+    }
+
+    /* --- сравнение --- */
+    async function loadScenario() {
+      const all = await api('/api/scenarios');
+      scenario.value = all[0] || null;
+    }
+
+    async function loadRuns() {
+      runs.value = await api('/api/scenarios/runs');
+    }
+
+    const busy = (strategy) => active.value.some(a => a.strategy === strategy);
+
+    async function startRun(strategy) {
+      runError.value = '';
+      try {
+        const started = await api(`/api/scenarios/${scenario.value.id}/runs`, {
+          method: 'POST',
+          body: JSON.stringify({ strategy, windowSize: runWindow.value }),
+        });
+        active.value.push({
+          sessionId: started.session.id,
+          total: started.total,
+          completed: 0,
+          strategy,
+          windowSize: started.session.windowSize,
+        });
+        await loadSessions();
+      } catch (e) {
+        runError.value = e.message;
+      }
+    }
+
+    /**
+     * Опрос прогресса. Отдельного реестра прогонов нет — прогресс виден по тому,
+     * сколько ходов уже записано в базу, а завершение по тому, что появился отчёт.
+     */
+    async function pollRuns() {
+      if (!active.value.length) return;
+      for (const a of [...active.value]) {
+        try {
+          const progress = await api(`/api/scenarios/runs/${a.sessionId}/progress`);
+          a.completed = progress.completed;
+          if (progress.run) {
+            active.value = active.value.filter(x => x.sessionId !== a.sessionId);
+            await loadRuns();
+            await loadSessions();
+          }
+        } catch (e) {
+          active.value = active.value.filter(x => x.sessionId !== a.sessionId);
+          runError.value = e.message;
+        }
+      }
+    }
+
+    /** Проверки в порядке шагов сценария: слева ранние детали, справа поздние. */
+    const byStep = (run) => [...run.checks].sort((a, b) => a.plantedAtStep - b.plantedAtStep);
+
+    /** Токены обслуживания памяти: вход плюс выход извлекателя. */
+    const upkeepTokens = (run) => run.totals.upkeepPromptTokens + run.totals.upkeepCompletionTokens;
+
+    const retentionTone = (run) => {
+      const share = run.checks.length ? run.passed / run.checks.length : 0;
+      return share >= 0.85 ? 'success' : share >= 0.5 ? 'warning' : 'danger';
+    };
+
+    onMounted(async () => {
+      await loadAgent();
+      await loadSessions();
+      // Открываем последний диалог сразу: пустой экран «выберите диалог» при непустом
+      // списке слева — лишний клик и ничего больше.
+      if (sessions.value.length) await openSession(sessions.value[0].session.id);
+      await loadScenario();
+      await loadRuns();
+      setInterval(pollRuns, 2000);
+    });
+
+    return {
+      tab, showTab, agent, sessions, current, currentId, draft, pending, sending, creating, error, errorBody, thread,
+      newStrategy, newWindow, scenario, runs, active, runWindow, runError, expanded,
+      successfulTurns, lastTurn, visibleCount, forgottenBefore,
+      strategyName, strategyShort, plural, fmt, cost, time, md, barHeight, byStep, retentionTone, busy, upkeepTokens,
+      openSession, openSessionTab, createSession, removeSession, send, fork, startRun,
+    };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
