@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Персональный редактор постов - день 12</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  [v-cloak] { display: none; }
+  :root { --color-background: #f5f6f3; --color-elevated: #f1f4f1; --color-border: #dce2dc;
+          --color-border-strong: #b8c5bb; --color-primary: #14755f; --color-primary-hover: #0f604e;
+          --color-primary-pressed: #0b4f40; --color-primary-soft: rgba(20,117,95,.12);
+          --color-text-secondary: #48534b; --color-text-muted: #68736b; }
+
+  .page { width: 100%; max-width: 1440px; margin-inline: auto; padding-inline: var(--space-6); }
+  .page-body { padding-block: var(--space-6) var(--space-10); }
+  .nav { display: flex; align-items: center; gap: var(--space-4); height: 64px;
+         border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
+  .nav-brand { display: flex; align-items: center; gap: var(--space-3); font-weight: 600; }
+  .nav-mark { width: 28px; height: 28px; border-radius: var(--radius-md); background: var(--color-primary);
+              color: #fff; display: grid; place-items: center; font-size: 0.8125rem; font-weight: 700; }
+  .nav-spacer { flex: 1; }
+
+  .layout { display: grid; grid-template-columns: 232px minmax(0, 1fr) 320px; gap: var(--space-4); align-items: start; }
+  @media (max-width: 1280px) { .layout { grid-template-columns: 240px minmax(0, 1fr); } .memory-panel { grid-column: 1 / -1; } }
+  @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+  .row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+  .row-tight { display: flex; align-items: center; gap: var(--space-2); }
+
+  .sessions { padding: 0; overflow: hidden; }
+  .sessions-head { padding: var(--space-4); border-bottom: 1px solid var(--color-border); display: grid; gap: var(--space-3); }
+  .sessions-list { max-height: calc(100vh - 260px); overflow-y: auto; }
+  .session { width: 100%; text-align: left; border: 0; background: none; cursor: pointer; display: grid; gap: 4px;
+             padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-border); font: inherit; }
+  .session:hover { background: var(--color-elevated); }
+  .session.is-active { background: var(--color-elevated); box-shadow: inset 3px 0 0 var(--color-primary); }
+  .session-title { font-size: 0.875rem; font-weight: 500; color: var(--color-text-primary);
+                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-meta { font-size: 0.75rem; color: var(--color-text-muted); font-family: var(--font-mono); }
+
+  .chat { padding: 0; display: flex; flex-direction: column; height: calc(100vh - 64px - var(--space-6) - var(--space-10)); min-height: 560px; }
+  .chat-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: center;
+               padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-border); }
+  .stage-track { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--color-border); }
+  .stage { min-width: 0; padding: 10px 8px; text-align: center; font-size: .75rem; color: var(--color-text-muted);
+           border-right: 1px solid var(--color-border); background: var(--color-surface); }
+  .stage:last-child { border-right: 0; }
+  .stage.is-done { color: var(--color-primary); background: var(--color-primary-soft); }
+  .stage.is-current { color: #fff; background: var(--color-primary); font-weight: 600; }
+  .thread { flex: 1; overflow-y: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+  .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: end;
+              padding: var(--space-4) var(--space-5); border-top: 1px solid var(--color-border); }
+  .composer .textarea { height: auto; min-height: 44px; max-height: 180px; resize: none; padding-block: 10px; }
+  @media (max-width: 900px) { .chat { height: auto; min-height: 0; } .thread { max-height: 60vh; } }
+
+  .empty { margin: auto; text-align: center; max-width: 42ch; color: var(--color-text-muted); }
+
+  .msg { max-width: 82%; display: grid; gap: var(--space-1); }
+  .msg[data-role="USER"] { align-self: flex-end; }
+  .msg[data-role="ASSISTANT"], .msg[data-role="ERROR"] { align-self: flex-start; }
+  .msg.is-forgotten { opacity: 0.42; }
+  .msg-meta { display: flex; gap: var(--space-2); align-items: baseline; font-size: 0.75rem; color: var(--color-text-muted); }
+  .msg[data-role="USER"] .msg-meta { justify-content: flex-end; }
+  .msg-meta .who { font-weight: 500; color: var(--color-text-secondary); }
+  .bubble { padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg); border: 1px solid var(--color-border);
+            font-size: 0.9375rem; line-height: 1.55; color: var(--color-text-primary); overflow-wrap: break-word; }
+  .msg[data-role="USER"] .bubble { background: var(--color-elevated); border-color: var(--color-border-strong);
+                                   white-space: pre-wrap; border-bottom-right-radius: var(--radius-sm); }
+  .msg[data-role="ASSISTANT"] .bubble { background: var(--color-surface); border-bottom-left-radius: var(--radius-sm); }
+  .msg[data-role="ERROR"] .bubble { background: var(--color-surface); border-color: var(--color-danger); color: var(--color-danger); font-size: 0.8125rem; }
+  .msg.is-pending .bubble { opacity: 0.65; }
+
+  .bubble p { margin: 0 0 var(--space-3); }
+  .bubble > :last-child { margin-bottom: 0; }
+  .bubble h4 { font-size: 1rem; font-weight: 600; margin: var(--space-3) 0 var(--space-2); }
+  .bubble ul, .bubble ol { margin: 0 0 var(--space-3); padding-left: var(--space-5); }
+  .bubble li { margin-bottom: var(--space-1); }
+  .bubble code { font-family: var(--font-mono); font-size: 0.875em; background: var(--color-elevated);
+                 border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 1px 4px; }
+  .bubble strong { font-weight: 600; }
+
+  .typing { display: inline-flex; gap: 4px; align-items: center; height: 1.4em; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--color-text-muted); animation: typing 1.2s infinite ease-in-out; }
+  .typing i:nth-child(2) { animation-delay: .2s; }
+  .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes typing { 0%, 60%, 100% { opacity: .25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+
+  .memory-panel { display: grid; gap: var(--space-3); align-content: start; min-width: 0; }
+  .memory-island { padding: 0; border-radius: 8px; overflow: hidden; }
+  .memory-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+                 padding: var(--space-4); border-bottom: 1px solid var(--color-border); }
+  .memory-head h3 { margin: 0; font-size: .875rem; font-weight: 700; line-height: 1.3; }
+  .memory-body { padding: var(--space-3) var(--space-4) var(--space-4); display: grid; gap: var(--space-3); }
+  .memory-empty { margin: 0; color: var(--color-text-muted); font-size: .8125rem; }
+  .memory-subhead { margin: 0; font-size: .75rem; font-weight: 600; color: var(--color-text-secondary); }
+  .short-list { max-height: 250px; overflow-y: auto; display: grid; }
+  .short-entry { padding: var(--space-2) 0; border-bottom: 1px solid var(--color-border); min-width: 0; }
+  .short-entry:last-child { border-bottom: 0; }
+  .short-entry-head { display: flex; justify-content: space-between; font-size: .6875rem;
+                      color: var(--color-text-muted); font-weight: 600; }
+  .short-entry-text { margin: 3px 0 0; font-size: .8125rem; line-height: 1.4; color: var(--color-text-secondary);
+                      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+                      overflow-wrap: anywhere; }
+  .memory-item { display: grid; gap: 3px; padding-bottom: var(--space-2); border-bottom: 1px solid var(--color-border); }
+  .memory-item:last-child { padding-bottom: 0; border-bottom: 0; }
+  .memory-key { font-weight: 600; color: var(--color-text-primary); font-size: 0.8125rem; overflow-wrap: anywhere; }
+  .memory-value { color: var(--color-text-secondary); font-size: 0.8125rem; overflow-wrap: anywhere; }
+  .memory-meta { font-family: var(--font-mono); font-size: 0.6875rem; color: var(--color-text-muted); }
+  .memory-form { display: grid; gap: var(--space-2); }
+  .memory-form .wide { grid-column: 1 / -1; }
+  .memory-form .textarea { min-height: 76px; resize: vertical; }
+  .memory-value.is-draft { white-space: pre-wrap; max-height: 220px; overflow-y: auto; }
+  .suggestion-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+  .suggestion { display: grid; gap: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--color-border); }
+  .memory-add { padding-top: var(--space-3); border-top: 1px solid var(--color-border); display: grid; gap: var(--space-2); }
+  .profile-card { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: var(--space-3);
+                  padding-bottom: var(--space-3); border-bottom: 1px solid var(--color-border); }
+  .profile-card:last-of-type { border-bottom: 0; }
+  .profile-content { min-width: 0; display: grid; gap: var(--space-2); align-content: start; }
+  .profile-avatar { width: 64px; height: 64px; border-radius: 18px; overflow: hidden; display: grid; place-items: center;
+                    background: linear-gradient(145deg, #e5eee9, #f7f3e8); border: 1px solid var(--color-border);
+                    color: var(--color-primary); font-size: 1.25rem; font-weight: 700; }
+  .profile-avatar img { width: 100%; height: 100%; object-fit: cover; object-position: center 16%; }
+  .profile-description { margin: 0; color: var(--color-text-secondary); font-size: .8125rem; line-height: 1.45; }
+  .profile-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+  .active-profile { display: inline-flex; align-items: center; gap: var(--space-2); font-size: .8125rem;
+                    font-weight: 600; color: var(--color-text-secondary); }
+  .active-profile-avatar { width: 28px; height: 28px; border-radius: 9px; overflow: hidden; display: grid; place-items: center;
+                           background: var(--color-primary-soft); color: var(--color-primary); border: 1px solid var(--color-border); }
+  .active-profile-avatar img { width: 100%; height: 100%; object-fit: cover; object-position: center 16%; }
+  @media (min-width: 901px) and (max-width: 1280px) {
+    .memory-panel { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+
+  .alert { border: 1px solid var(--color-danger); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4);
+           color: var(--color-danger); font-size: 0.875rem; background: var(--color-surface); }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="nav">
+    <div class="page row">
+      <div class="nav-brand">
+        <span class="nav-mark">12</span>
+        <span>Персональный редактор</span>
+      </div>
+      <span class="nav-spacer"></span>
+      <a class="btn btn-secondary btn-sm" :href="currentId ? '/inside.html?session=' + currentId : '/inside.html'">Внутри агента ↗</a>
+      <span v-if="agent" class="chip" data-tone="neutral">{{ agent.model }}</span>
+      <span class="chip" data-tone="info">День 12 · профили</span>
+    </div>
+  </header>
+
+  <main class="page page-body">
+    <div class="layout">
+      <aside class="card sessions">
+        <div class="sessions-head">
+          <div class="row-tight" style="justify-content:space-between">
+            <h2 class="t-title-sm" style="margin:0">Посты</h2>
+          </div>
+          <div class="field">
+            <label class="field-label">Название поста</label>
+            <input class="input" v-model="newTitle" placeholder="Например: практика AI">
+          </div>
+          <div class="field">
+            <label class="field-label">Окно диалога</label>
+            <input class="input" type="number" min="1" max="200" v-model.number="newWindow">
+          </div>
+          <button class="btn btn-primary btn-sm" @click="createSession" :disabled="creating">Новый пост</button>
+        </div>
+        <div class="sessions-list">
+          <button v-for="s in sessions" :key="s.session.id" class="session"
+                  :class="{ 'is-active': s.session.id === currentId }"
+                  @click="openSession(s.session.id)">
+            <span class="session-title">{{ s.session.title }}</span>
+            <span class="session-meta">{{ s.profile?.name || 'Выбор профиля' }} · {{ stageLabel(s.working?.state) }}</span>
+          </button>
+          <p v-if="!sessions.length" class="t-body-sm t-muted" style="padding: var(--space-4)">
+            Постов пока нет.
+          </p>
+        </div>
+      </aside>
+
+      <section class="card chat">
+        <template v-if="current">
+          <div class="chat-head">
+            <div>
+              <h2 class="t-title-md" style="margin:0">{{ current.session.title }}</h2>
+              <p class="t-body-sm t-muted" style="margin:2px 0 0">
+                {{ stageLabel(current.working?.state) }} · {{ current.working?.currentStep }}
+              </p>
+            </div>
+            <div class="row-tight">
+              <span v-if="current.profile" class="active-profile">
+                <span class="active-profile-avatar">
+                  <img v-if="profileImage(current.profile)" :src="profileImage(current.profile)" alt="">
+                  <span v-else>{{ profileInitial(current.profile) }}</span>
+                </span>
+                {{ current.profile.name }}
+              </span>
+              <span v-else class="chip" data-tone="warning">Профиль не выбран</span>
+              <button class="btn btn-secondary btn-sm" @click="removeSession(current.session.id)">Удалить</button>
+            </div>
+          </div>
+
+          <div class="stage-track" aria-label="Этапы работы над постом">
+            <div v-for="(stage, index) in stages" :key="stage.code" class="stage"
+                 :class="{ 'is-current': current.working?.state === stage.code,
+                           'is-done': stageIndex(current.working?.state) > index }">
+              {{ stage.name }}
+            </div>
+          </div>
+
+          <div class="thread" ref="thread">
+            <div v-if="!current.messages.length" class="empty">
+              <p class="t-body-md">О чем хочешь написать?</p>
+            </div>
+
+            <div v-for="(m, i) in current.messages" :key="m.id" class="msg"
+                 :data-role="m.role" :class="{ 'is-forgotten': i < forgottenBefore }">
+              <div class="msg-meta">
+                <span class="who">{{ m.role === 'USER' ? 'Ты' : agent?.name }}</span>
+                <span>{{ time(m.at) }}</span>
+              </div>
+              <div v-if="m.role === 'ASSISTANT'" class="bubble" v-html="md(m.content)"></div>
+              <div v-else class="bubble">{{ m.content }}</div>
+            </div>
+
+            <div v-if="pending" class="msg is-pending" data-role="USER">
+              <div class="msg-meta"><span class="who">Ты</span></div>
+              <div class="bubble">{{ pending }}</div>
+            </div>
+            <div v-if="sending" class="msg" data-role="ASSISTANT">
+              <div class="msg-meta"><span class="who">{{ agent?.name }}</span></div>
+              <div class="bubble"><span class="typing"><i></i><i></i><i></i></span></div>
+            </div>
+            <div v-if="error" class="msg" data-role="ERROR">
+              <div class="bubble">
+                <strong>{{ error }}</strong>
+                <div v-if="errorBody" class="t-mono-sm" style="margin-top:8px; white-space:pre-wrap">{{ errorBody }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="composer">
+            <textarea class="input textarea" rows="1" v-model="draft" :disabled="sending"
+                      placeholder="Расскажи мысль или предложи правку..."
+                      @keydown.enter.exact.prevent="send"></textarea>
+            <button class="btn btn-primary" @click="send" :disabled="sending || !draft.trim()">Отправить</button>
+          </div>
+        </template>
+
+        <div v-else class="empty" style="padding: var(--space-10)">
+          <p class="t-body-md">Пост не выбран.</p>
+        </div>
+      </section>
+
+      <aside class="memory-panel" v-if="current" aria-label="Слои памяти">
+        <section class="card memory-island">
+          <div class="memory-head">
+            <h3>Профили</h3>
+          </div>
+          <div class="memory-body">
+            <p v-if="!profiles.length" class="memory-empty">Создай профиль, чтобы начать пост.</p>
+            <div v-for="profile in profiles" :key="profile.id" class="profile-card">
+              <div class="profile-avatar">
+                <img v-if="profileImage(profile)" :src="profileImage(profile)" :alt="`Профиль ${profile.name}`">
+                <span v-else>{{ profileInitial(profile) }}</span>
+              </div>
+              <div class="profile-content">
+                <div class="row-tight" style="justify-content:space-between">
+                  <span class="memory-key">{{ profile.name }}</span>
+                  <span v-if="current.profile?.id === profile.id" class="chip" data-tone="success">Активен</span>
+                </div>
+                <p class="profile-description">{{ profile.description }}</p>
+                <div class="profile-actions">
+                  <button class="btn btn-tertiary btn-sm" @click="editProfile(profile)">Редактировать</button>
+                  <button class="btn btn-tertiary btn-sm" @click="deleteProfile(profile)">Удалить</button>
+                </div>
+              </div>
+            </div>
+            <div class="memory-add">
+              <p class="memory-subhead">{{ editingProfileId ? 'Редактировать профиль' : 'Новый профиль' }}</p>
+              <form class="memory-form" @submit.prevent="saveProfile">
+                <input class="input" v-model="profileForm.name" placeholder="Название" aria-label="Название профиля">
+                <textarea class="input textarea" v-model="profileForm.description"
+                          placeholder="Опиши, через какую призму смотреть на тему" aria-label="Описание профиля"></textarea>
+                <div class="profile-actions">
+                  <button class="btn btn-primary btn-sm">{{ editingProfileId ? 'Сохранить' : 'Создать' }}</button>
+                  <button v-if="editingProfileId" type="button" class="btn btn-tertiary btn-sm" @click="cancelProfileEdit">Отмена</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <section class="card memory-island">
+          <div class="memory-head">
+            <h3>Краткосрочная память</h3>
+          </div>
+          <div class="memory-body short-list">
+            <p v-if="!recentMessages.length" class="memory-empty">Сообщений пока нет.</p>
+            <div v-for="m in recentMessages" :key="m.id" class="short-entry">
+              <div class="short-entry-head"><span>{{ m.role === 'USER' ? 'Ты' : 'Редактор' }}</span><span>{{ time(m.at) }}</span></div>
+              <p class="short-entry-text">{{ m.content }}</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="card memory-island">
+          <div class="memory-head">
+            <h3>Рабочая память</h3>
+          </div>
+          <div class="memory-body" v-if="current.working">
+            <div class="memory-item">
+              <span class="memory-key">Текущий шаг</span>
+              <span class="memory-value">{{ current.working.currentStep }}</span>
+            </div>
+            <div class="memory-item">
+              <span class="memory-key">Ожидаемое действие</span>
+              <span class="memory-value">{{ current.working.expectedAction }}</span>
+            </div>
+            <div class="memory-item" v-if="current.working.idea">
+              <span class="memory-key">Идея</span>
+              <span class="memory-value">{{ current.working.idea }}</span>
+            </div>
+            <div class="memory-item" v-if="current.working.thesis">
+              <span class="memory-key">Тезис</span>
+              <span class="memory-value">{{ current.working.thesis }}</span>
+            </div>
+            <div class="memory-item" v-if="current.working.plan.length">
+              <span class="memory-key">План</span>
+              <span v-for="(item, i) in current.working.plan" :key="item" class="memory-value">{{ i + 1 }}. {{ item }}</span>
+            </div>
+            <div class="memory-item" v-if="current.working.draft">
+              <span class="memory-key">Черновик</span>
+              <span class="memory-value is-draft">{{ current.working.draft }}</span>
+            </div>
+            <div class="memory-item" v-if="current.working.notes.length">
+              <span class="memory-key">Открытые замечания</span>
+              <span v-for="item in current.working.notes" :key="item" class="memory-value">{{ item }}</span>
+            </div>
+            <p v-if="!current.working.idea && !current.working.thesis && !current.working.plan.length && !current.working.draft"
+               class="memory-empty">Идея пока не зафиксирована.</p>
+            <div class="suggestion" v-if="current.working.styleSuggestion">
+              <p class="memory-subhead">Предложено запомнить для будущих постов</p>
+              <span class="memory-key">{{ current.working.styleSuggestion.key }}</span>
+              <span class="memory-value">{{ current.working.styleSuggestion.value }}</span>
+              <div class="suggestion-actions">
+                <button class="btn btn-primary btn-sm" @click="acceptSuggestion">Запомнить</button>
+                <button class="btn btn-tertiary btn-sm" @click="dismissSuggestion">Отклонить</button>
+              </div>
+            </div>
+          </div>
+          <div class="memory-body" v-else><p class="memory-empty">Состояние поста пока пусто.</p></div>
+        </section>
+
+        <section class="card memory-island">
+          <div class="memory-head">
+            <h3>Долговременная память</h3>
+          </div>
+          <div class="memory-body">
+            <p v-if="!longTerm.length" class="memory-empty">Сохраненных сведений пока нет.</p>
+            <div v-for="item in longTerm" :key="item.id" class="memory-item">
+              <span class="memory-key">{{ memoryKindLabel(item.kind) }} · {{ item.key }}</span>
+              <span class="memory-value">{{ item.value }}</span>
+              <button class="btn btn-tertiary btn-sm" style="justify-self:start" @click="deleteMemory(item.id)">Удалить</button>
+            </div>
+            <div class="memory-add">
+              <p class="memory-subhead">Добавить правило стиля</p>
+              <form class="memory-form" @submit.prevent="saveMemory">
+                <input class="input" v-model="memoryForm.key" placeholder="Например: Финал поста" aria-label="Название правила">
+                <textarea class="input textarea" v-model="memoryForm.value" placeholder="Например: без назидательного вывода" aria-label="Текст правила"></textarea>
+                <button class="btn btn-primary btn-sm">Сохранить</button>
+              </form>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, ref, computed, nextTick, onMounted } = Vue;
+
+const ESCAPE = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const escapeHtml = (text) => text.replace(/[&<>"']/g, c => ESCAPE[c]);
+
+function inlineMd(text) {
+  return text
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+}
+
+function md(raw) {
+  const text = escapeHtml(raw || '');
+  const out = [];
+  let list = null, para = [];
+  const flushList = () => { if (list) { out.push(`<${list.tag}>${list.items.map(i => `<li>${i}</li>`).join('')}</${list.tag}>`); list = null; } };
+  const flushPara = () => { if (para.length) { out.push(`<p>${para.join('<br>')}</p>`); para = []; } };
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trimEnd();
+    if (!line.trim()) { flushList(); flushPara(); continue; }
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) { flushList(); flushPara(); out.push(`<h4>${inlineMd(heading[1])}</h4>`); continue; }
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
+    const numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    if (bullet || numbered) {
+      flushPara();
+      const tag = bullet ? 'ul' : 'ol';
+      if (!list || list.tag !== tag) { flushList(); list = { tag, items: [] }; }
+      list.items.push(inlineMd(bullet ? bullet[1] : numbered[1]));
+      continue;
+    }
+    flushList();
+    para.push(inlineMd(line));
+  }
+  flushList(); flushPara();
+  return out.join('');
+}
+
+async function api(path, options) {
+  const response = await fetch(path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    const e = new Error(body?.error || `Ошибка ${response.status}`);
+    e.body = body?.providerBody;
+    throw e;
+  }
+  return body;
+}
+
+createApp({
+  setup() {
+    const agent = ref(null);
+    const sessions = ref([]);
+    const current = ref(null);
+    const currentId = ref(null);
+    const longTerm = ref([]);
+    const profiles = ref([]);
+    const draft = ref('');
+    const pending = ref('');
+    const sending = ref(false);
+    const creating = ref(false);
+    const error = ref('');
+    const errorBody = ref('');
+    const thread = ref(null);
+    const newTitle = ref('');
+    const newWindow = ref(6);
+    const memoryForm = ref({ key: '', value: '' });
+    const profileForm = ref({ name: '', description: '' });
+    const editingProfileId = ref(null);
+    const stages = [
+      { code: 'IDEA', name: 'Идея' },
+      { code: 'THESIS', name: 'Тезис' },
+      { code: 'PLAN', name: 'План' },
+      { code: 'DRAFT', name: 'Черновик' },
+    ];
+    const stageIndex = (code) => stages.findIndex(stage => stage.code === code);
+    const stageLabel = (code) => stages.find(stage => stage.code === code)?.name || 'Идея';
+    const memoryKindLabel = (kind) => ({ PROFILE: 'Профиль', PREFERENCE: 'Стиль', DECISION: 'Решение', KNOWLEDGE: 'Знание' })[kind] || kind;
+
+    const time = (iso) => new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    const profileImage = (profile) => {
+      const name = (profile?.name || '').trim().toLocaleLowerCase('ru-RU');
+      if (name.includes('хим')) return '/images/profiles/chemist.png';
+      if (name.includes('психолог')) return '/images/profiles/psychologist.png';
+      if (name.includes('эконом')) return '/images/profiles/economist.png';
+      return null;
+    };
+    const profileInitial = (profile) => (profile?.name || '?').trim().charAt(0).toLocaleUpperCase('ru-RU');
+    const recentMessages = computed(() => current.value
+      ? current.value.messages.slice(-current.value.session.windowSize)
+      : []);
+    const forgottenBefore = computed(() => {
+      if (!current.value) return 0;
+      return Math.max(0, current.value.messages.length - current.value.session.windowSize);
+    });
+
+    async function loadAgent() {
+      agent.value = await api('/api/agent');
+      newWindow.value = agent.value.defaultWindowSize;
+    }
+
+    async function loadSessions() {
+      sessions.value = await api('/api/sessions');
+    }
+
+    async function loadLongTerm() {
+      longTerm.value = await api('/api/memory/long-term');
+    }
+
+    async function loadProfiles() {
+      profiles.value = await api('/api/profiles');
+    }
+
+    async function openSession(id) {
+      currentId.value = id;
+      localStorage.setItem('day13-session', String(id));
+      current.value = await api(`/api/sessions/${id}`);
+      longTerm.value = current.value.longTerm;
+      error.value = '';
+      errorBody.value = '';
+      await nextTick();
+      if (thread.value) thread.value.scrollTop = thread.value.scrollHeight;
+    }
+
+    async function createSession() {
+      creating.value = true;
+      try {
+        const session = await api('/api/sessions', {
+          method: 'POST',
+          body: JSON.stringify({
+            title: newTitle.value.trim() || null,
+            windowSize: newWindow.value,
+          }),
+        });
+        newTitle.value = '';
+        await loadSessions();
+        await openSession(session.id);
+      } catch (e) {
+        error.value = e.message;
+      } finally {
+        creating.value = false;
+      }
+    }
+
+    async function removeSession(id) {
+      await api(`/api/sessions/${id}`, { method: 'DELETE' });
+      current.value = null;
+      currentId.value = null;
+      await loadSessions();
+      if (sessions.value.length) await openSession(sessions.value[0].session.id);
+    }
+
+    async function send() {
+      const text = draft.value.trim();
+      if (!text || sending.value || !currentId.value) return;
+      const sessionId = currentId.value;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 70000);
+      draft.value = '';
+      pending.value = text;
+      sending.value = true;
+      error.value = '';
+      errorBody.value = '';
+      await nextTick();
+      if (thread.value) thread.value.scrollTop = thread.value.scrollHeight;
+      try {
+        await api(`/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({ text }),
+          signal: controller.signal,
+        });
+        if (currentId.value === sessionId) await openSession(sessionId);
+        await loadSessions();
+      } catch (e) {
+        error.value = e.name === 'AbortError'
+          ? 'Ответ не пришел за 70 секунд. Проверь историю диалога перед повтором.'
+          : e.message;
+        errorBody.value = e.body || '';
+        draft.value = text;
+      } finally {
+        clearTimeout(timeout);
+        pending.value = '';
+        sending.value = false;
+      }
+    }
+
+    async function saveMemory() {
+      const form = memoryForm.value;
+      if (!form.key.trim() || !form.value.trim()) return;
+      try {
+        await api('/api/memory/long-term', {
+          method: 'POST',
+          body: JSON.stringify({ ...form, kind: 'PREFERENCE' }),
+        });
+        memoryForm.value = { key: '', value: '' };
+        await openSession(currentId.value);
+      } catch (e) { error.value = e.message; }
+    }
+
+    async function deleteMemory(id) {
+      try {
+        await api(`/api/memory/long-term/${id}`, { method: 'DELETE' });
+        await openSession(currentId.value);
+      } catch (e) { error.value = e.message; }
+    }
+
+    async function acceptSuggestion() {
+      try {
+        await api(`/api/sessions/${currentId.value}/style-suggestion`, { method: 'POST' });
+        await openSession(currentId.value);
+      } catch (e) { error.value = e.message; }
+    }
+
+    async function dismissSuggestion() {
+      try {
+        await api(`/api/sessions/${currentId.value}/style-suggestion`, { method: 'DELETE' });
+        await openSession(currentId.value);
+      } catch (e) { error.value = e.message; }
+    }
+
+    function editProfile(profile) {
+      editingProfileId.value = profile.id;
+      profileForm.value = { name: profile.name, description: profile.description };
+    }
+
+    function cancelProfileEdit() {
+      editingProfileId.value = null;
+      profileForm.value = { name: '', description: '' };
+    }
+
+    async function saveProfile() {
+      const form = profileForm.value;
+      if (!form.name.trim() || !form.description.trim()) return;
+      try {
+        const id = editingProfileId.value;
+        await api(id ? `/api/profiles/${id}` : '/api/profiles', {
+          method: id ? 'PUT' : 'POST',
+          body: JSON.stringify(form),
+        });
+        cancelProfileEdit();
+        await loadProfiles();
+        await loadSessions();
+        if (currentId.value) await openSession(currentId.value);
+      } catch (e) { error.value = e.message; }
+    }
+
+    async function deleteProfile(profile) {
+      if (!window.confirm(`Удалить профиль «${profile.name}»? У связанных постов профиль придется выбрать заново.`)) return;
+      try {
+        await api(`/api/profiles/${profile.id}`, { method: 'DELETE' });
+        if (editingProfileId.value === profile.id) cancelProfileEdit();
+        await loadProfiles();
+        await loadSessions();
+        if (currentId.value) await openSession(currentId.value);
+      } catch (e) { error.value = e.message; }
+    }
+
+    onMounted(async () => {
+      await loadAgent();
+      await loadProfiles();
+      await loadSessions();
+      await loadLongTerm();
+      if (sessions.value.length) {
+        const preferred = Number(new URLSearchParams(location.search).get('session') || localStorage.getItem('day13-session'));
+        await openSession(sessions.value.find(s => s.session.id === preferred)?.session.id || sessions.value[0].session.id);
+      } else {
+        await createSession();
+      }
+    });
+
+    return {
+      agent, sessions, current, currentId, longTerm, profiles, draft, pending, sending, creating, error, errorBody, thread,
+      newTitle, newWindow, memoryForm, profileForm, editingProfileId, recentMessages, forgottenBefore, stages, stageIndex, stageLabel, memoryKindLabel,
+      profileImage, profileInitial, time, md, openSession, createSession, removeSession, send, saveMemory, deleteMemory,
+      acceptSuggestion, dismissSuggestion, editProfile, cancelProfileEdit, saveProfile, deleteProfile,
+    };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

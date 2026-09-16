@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Внутри агента · День 12</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/inside.css">
+  <script src="/js/inside.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark">12</span> Персональный редактор</a>
+    <nav aria-label="Разделы"><a id="chat-link" href="/">Редактор</a><a href="/inside.html" aria-current="page">Внутри агента</a></nav>
+    <span class="top-note">AI CHALLENGE / DAY 12</span>
+  </header>
+  <main>
+    <div class="page-heading"><div><p class="eyebrow">СИСТЕМА КРУПНЫМ ПЛАНОМ</p><h1>Внутри агента<span class="heading-dot">.</span></h1>
+      <p class="subtitle">Из чего складывается контекст и как меняется память.</p></div>
+      <div class="live-indicator" id="connection" role="status"><i></i><span>Подключение…</span></div>
+    </div>
+    <section class="toolbar" aria-label="Выбор сессии и шага">
+      <label class="session-picker"><span class="eyebrow">СЕССИЯ</span><select id="session-select" aria-label="Сессия"><option>Загрузка…</option></select></label>
+      <div class="mode-switch" aria-label="Режим просмотра"><button id="now-mode" class="selected" aria-pressed="true">Сейчас</button><button id="step-mode" aria-pressed="false">Конкретный шаг</button></div>
+      <select id="trace-select" aria-label="Шаг обработки" hidden></select>
+      <span id="mode-note" class="toolbar-note">Актуальное состояние хранилищ</span>
+    </section>
+    <p id="error" class="error-banner" role="alert" hidden></p>
+    <div id="empty" class="empty-state" hidden><h2>Пока нет сессий</h2><p>Создай пост в редакторе — здесь появятся его профиль, память и путь данных.</p><a class="primary-link" href="/">Открыть редактор →</a></div>
+    <section id="map-section" aria-label="Карта архитектуры агента">
+      <div class="map-caption"><span><i class="legend-dot green"></i> Данные и память <i class="legend-dot blue"></i> Обработка <i class="legend-dot violet"></i> Внешний сервис</span><span>Нажми на блок, чтобы заглянуть внутрь ↗</span></div>
+      <div class="organism" id="organism">
+        <svg id="connections" class="connections" aria-hidden="true"></svg>
+        <section class="sources"><div class="column-label"><span>01 / ИСТОЧНИКИ КОНТЕКСТА</span><span>SQLite</span></div>
+          <button class="node source profile-node" data-node="profile" data-tone="green"><div class="node-heading"><span class="node-icon">◈</span><h2>Профиль</h2><span class="expand">↗</span></div><div class="node-content" id="profile-content"></div><div class="node-footer"><code>profile</code><span>Призма автора</span></div></button>
+          <button class="node source" data-node="shortTerm" data-tone="blue"><div class="node-heading"><span class="node-icon">≋</span><h2>Краткосрочная память</h2><span class="expand">↗</span></div><div class="node-content" id="short-content"></div><div class="node-footer"><code>message</code><span>Внутри сессии</span></div></button>
+          <button class="node source" data-node="working" data-tone="amber"><div class="node-heading"><span class="node-icon">▤</span><h2>Рабочая память</h2><span class="expand">↗</span></div><div class="node-content" id="working-content"></div><div class="node-footer"><code>post_task</code><span>Внутри сессии</span></div></button>
+          <button class="node source" data-node="longTerm" data-tone="violet"><div class="node-heading"><span class="node-icon">∞</span><h2>Долговременная память</h2><span class="expand">↗</span></div><div class="node-content" id="long-content"></div><div class="node-footer"><code>memory_item</code><span>Общая для сессий</span></div></button>
+        </section>
+        <section class="agent-shell"><div class="shell-heading"><div><span class="eyebrow">02 / ОРКЕСТРАЦИЯ</span><h2>Агент <span class="code-label">Agent</span></h2></div><span class="status-pill" id="agent-status">Ожидание</span></div>
+          <button class="node processor entry-node" data-node="entry" data-tone="blue"><div class="node-heading"><span class="step-number">01</span><h2>Обработка сообщения</h2><span class="expand">↗</span></div><div class="node-content" id="entry-content"></div></button>
+          <span class="internal-arrow" aria-hidden="true">↓</span>
+          <button class="node processor" data-node="prompt" data-tone="blue"><div class="node-heading"><span class="step-number">02</span><h2>Сборщик промпта</h2><span class="expand">↗</span></div><div class="node-content" id="prompt-content"></div><div class="node-footer"><code>PromptBuilder</code><span id="prompt-volume">Контекст для модели</span></div></button>
+          <span class="internal-arrow" aria-hidden="true">↓</span>
+          <button class="node processor" data-node="parser" data-tone="blue"><div class="node-heading"><span class="step-number">03</span><h2>Разбор ответа</h2><span class="expand">↗</span></div><div class="node-content" id="parser-content"></div><div class="node-footer"><code>AgentDecision</code><span>Проверка JSON</span></div></button>
+          <span class="internal-arrow" aria-hidden="true">↓</span>
+          <button class="node processor" data-node="router" data-tone="blue"><div class="node-heading"><span class="step-number">04</span><h2>Маршрутизатор памяти</h2><span class="expand">↗</span></div><div class="node-content" id="router-content"></div><div class="node-footer"><code>MemoryRouter</code><span>Проверка → сохранение</span></div></button>
+        </section>
+        <section class="runtime"><div class="column-label"><span>03 / ВЫПОЛНЕНИЕ</span></div>
+          <div class="runtime-spacer"><span class="micro-label">ЗАПРОС → ОТВЕТ</span></div>
+          <button class="node client-node" data-node="llm" data-tone="violet"><div class="node-heading"><span class="node-icon">⇄</span><h2>LLM-клиент</h2><span class="expand">↗</span></div><div class="node-content" id="llm-content"></div><div class="node-footer"><code>OpenRouterClient</code><span>HTTP / JSON</span></div></button>
+          <span class="external-arrow" aria-hidden="true">↓ запрос <span>ответ ↑</span></span>
+          <button class="node model-node" data-node="model" data-tone="violet"><div class="node-heading"><span class="node-icon">✳</span><h2>Модель</h2><span class="expand">↗</span></div><div class="node-content" id="model-content"></div><div class="node-footer"><span>Внешний сервис</span><span id="model-usage">OpenRouter</span></div></button>
+          <button class="node output-node" data-node="output" data-tone="green"><div class="node-heading"><span class="node-icon">↳</span><h2>Результат шага</h2><span class="expand">↗</span></div><div class="node-content" id="output-content"></div></button>
+        </section>
+      </div>
+      <section class="activity"><div class="activity-heading"><div><span class="eyebrow">ПУТЬ ДАННЫХ</span><h2 id="activity-title">Новые действия появятся здесь</h2></div><span id="activity-time" class="code-label"></span></div><div id="event-trail" class="event-trail"></div><div id="change-trail" class="change-trail"></div><p id="history-note" class="history-note"></p></section>
+      <form id="probe-form" class="probe-form"><label for="probe-input">Понаблюдать за действием</label><input id="probe-input" autocomplete="off" placeholder="Напиши сообщение агенту…" required maxlength="20000"><button type="submit" id="probe-submit">Отправить ↗</button><span>Ответ сохранится в редакторе</span></form>
+    </section>
+    <footer class="page-footer"><span>ДЕНЬ 12 · ПРОФИЛИ И ПАМЯТЬ</span><span>Состояния и переходы из приложения · без полной ленты чата</span></footer>
+  </main>
+  <dialog id="detail-dialog"><div class="detail-heading"><div><p class="eyebrow" id="detail-subtitle"></p><h2 id="detail-title"></h2></div><button id="close-detail" aria-label="Закрыть подробности">×</button></div><div id="detail-body"></div></dialog>
+</body>
+</html>
