@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: day14
+  config:
+    import: optional:file:.env[.properties]
+  threads:
+    virtual:
+      enabled: true
+  sql:
+    init:
+      mode: always
+
+server:
+  port: ${PORT:8094}
+
+chat:
+  db-path: ${DB_PATH:./data/day14.db}
+
+llm:
+  openrouter:
+    base-url: ${OPENROUTER_BASE_URL:https://openrouter.ai/api/v1}
+    api-key: ${OPENROUTER_API_KEY:}
+    referer: ${OPENROUTER_REFERER:https://github.com/helpsolution/AI-Challenge}
+    title: AI Advent Challenge day 14
+    connect-timeout: 10s
+    read-timeout: 120s
+
+agent:
+  name: Редактор
+  model: ${AGENT_MODEL:openai/gpt-4.1-mini}
+  max-tokens: ${AGENT_MAX_TOKENS:3072}
+  temperature: ${AGENT_TEMPERATURE:0.3}
+  window-size: ${AGENT_WINDOW_SIZE:6}
+  long-term-limit: ${AGENT_LONG_TERM_LIMIT:30}
+  persona: >
+    Ты редакционный партнер автора личного Telegram-канала. Помогай выразить его собственную мысль,
+    а не подменяй ее шаблонным текстом. Пиши по-русски, обращайся на ты, используй короткие тире,
+    двойные кавычки и букву е вместо ё. Не выдумывай события и факты из жизни автора.
+    Задавай уточняющие вопросы только там, где без ответа нельзя двигаться дальше.
+
+logging:
+  level:
+    advent.day14: DEBUG
+    advent.day14.llm.OpenRouterClient: INFO
