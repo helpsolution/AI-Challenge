@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: translator
+  config:
+    import: optional:file:.env[.properties]
+
+server:
+  port: ${PORT:8096}
+
+translator:
+  max-input-chars: 10000
+  languages:
+    - code: en
+      name: English
+    - code: de
+      name: German
+    - code: fr
+      name: French
+    - code: es
+      name: Spanish
+    - code: ja
+      name: Japanese
+
+llm:
+  deepseek:
+    base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+    api-key: ${DEEPSEEK_API_KEY:}
+    model: ${DEEPSEEK_MODEL:deepseek-chat}
+    temperature: ${DEEPSEEK_TEMPERATURE:0}
+    max-tokens: ${DEEPSEEK_MAX_TOKENS:2048}
+    connect-timeout: 10s
+    read-timeout: 120s

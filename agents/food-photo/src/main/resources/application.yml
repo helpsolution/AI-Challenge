@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: food-photo
+  config:
+    import: optional:file:.env[.properties]
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+server:
+  port: ${PORT:8097}
+
+food-photo:
+  max-image-bytes: 5242880
+
+llm:
+  openrouter:
+    base-url: ${OPENROUTER_BASE_URL:https://openrouter.ai/api/v1}
+    api-key: ${OPENROUTER_API_KEY:}
+    model: ${OPENROUTER_MODEL:google/gemini-2.5-flash-lite}
+    max-tokens: ${OPENROUTER_MAX_TOKENS:350}
+    connect-timeout: 10s
+    read-timeout: 90s
