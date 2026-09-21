@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: day16-weather-service
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: ${PORT:8096}
+
+open-meteo:
+  geocoding-url: ${OPEN_METEO_GEOCODING_URL:https://geocoding-api.open-meteo.com/v1/search}
+  forecast-url: ${OPEN_METEO_FORECAST_URL:https://api.open-meteo.com/v1/forecast}
+  language: ru
+  connect-timeout: 5s
+  read-timeout: 15s
+
+springdoc:
+  swagger-ui:
+    path: /swagger
+    display-request-duration: true
+    operations-sorter: alpha
+  api-docs:
+    path: /api-docs
+
+logging:
+  level:
+    advent.day16: DEBUG
