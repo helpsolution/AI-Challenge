@@ -1,0 +1,379 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "День 15 — редактор постов с контролируемым жизненным циклом",
+    "output": "architecture.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1360,
+      690
+    ],
+    "views": [
+      {
+        "id": "main-path",
+        "label": "Основной путь хода",
+        "focus": [
+          "author",
+          "spa",
+          "ctl",
+          "agent",
+          "llm",
+          "openrouter"
+        ],
+        "note": "Сообщение автора доходит до модели и возвращается предложением."
+      },
+      {
+        "id": "control",
+        "label": "Контроль перехода",
+        "focus": [
+          "agent",
+          "lifecycle",
+          "guard",
+          "router",
+          "db"
+        ],
+        "note": "Переход применяет детерминированный код, а не ответ модели."
+      },
+      {
+        "id": "observability",
+        "label": "Карта агента",
+        "focus": [
+          "inside",
+          "ctl",
+          "inspection",
+          "db"
+        ],
+        "note": "Трасса шага: промпт, ответ LLM, вердикты, изменения памяти."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "author",
+      "type": "external",
+      "label": "Автор канала",
+      "sublabel": "браузер",
+      "pos": [
+        40,
+        304
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "inside",
+      "type": "frontend",
+      "label": "Карта агента",
+      "sublabel": "inside.html",
+      "pos": [
+        40,
+        172
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "spa",
+      "type": "frontend",
+      "label": "Редактор постов",
+      "sublabel": "Vue 3, index.html",
+      "pos": [
+        400,
+        304
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "ctl",
+      "type": "backend",
+      "label": "REST API",
+      "sublabel": "Spring Boot 4, /api",
+      "pos": [
+        760,
+        304
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "Agent",
+      "sublabel": "оркестратор хода",
+      "tag": "PromptBuilder внутри",
+      "pos": [
+        1120,
+        304
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "llm",
+      "type": "backend",
+      "label": "OpenRouterClient",
+      "sublabel": "java.net.http",
+      "pos": [
+        1120,
+        172
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "openrouter",
+      "type": "external",
+      "label": "OpenRouter",
+      "sublabel": "gpt-4.1-mini",
+      "pos": [
+        1120,
+        40
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "inspection",
+      "type": "backend",
+      "label": "AgentInspection",
+      "sublabel": "трассы шагов",
+      "pos": [
+        760,
+        436
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "lifecycle",
+      "type": "security",
+      "label": "TaskLifecycle",
+      "sublabel": "карта переходов",
+      "tag": "решает код",
+      "pos": [
+        1120,
+        568
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "guard",
+      "type": "security",
+      "label": "InvariantGuard",
+      "sublabel": "правила канала",
+      "pos": [
+        760,
+        568
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "router",
+      "type": "backend",
+      "label": "MemoryRouter",
+      "sublabel": "preview → commit",
+      "pos": [
+        400,
+        568
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "SQLite",
+      "sublabel": "data/day15.db",
+      "pos": [
+        40,
+        568
+      ],
+      "size": [
+        190,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "Контроль хода: запись только после двух вердиктов",
+      "wraps": [
+        "lifecycle",
+        "guard",
+        "router"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "author-spa",
+      "from": "author",
+      "to": "spa",
+      "label": "пишет пост",
+      "variant": "emphasis"
+    },
+    {
+      "id": "author-inside",
+      "from": "author",
+      "to": "inside",
+      "label": "смотрит трассы",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "spa-ctl",
+      "from": "spa",
+      "to": "ctl",
+      "label": "REST, JSON",
+      "variant": "emphasis"
+    },
+    {
+      "id": "inside-ctl",
+      "from": "inside",
+      "to": "ctl",
+      "label": "инспекция",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "top"
+    },
+    {
+      "id": "ctl-agent",
+      "from": "ctl",
+      "to": "agent",
+      "label": "ask(sessionId, text)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "agent-llm",
+      "from": "agent",
+      "to": "llm",
+      "label": "complete, JSON",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "llm-openrouter",
+      "from": "llm",
+      "to": "openrouter",
+      "label": "POST /chat/completions",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "agent-lifecycle",
+      "from": "agent",
+      "to": "lifecycle",
+      "label": "предложенный переход",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 60
+    },
+    {
+      "id": "lifecycle-guard",
+      "from": "lifecycle",
+      "to": "guard",
+      "label": "переход разрешён",
+      "variant": "emphasis"
+    },
+    {
+      "id": "guard-router",
+      "from": "guard",
+      "to": "router",
+      "label": "правила пройдены",
+      "variant": "emphasis"
+    },
+    {
+      "id": "router-db",
+      "from": "router",
+      "to": "db",
+      "label": "commit: post_task",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ctl-inspection",
+      "from": "ctl",
+      "to": "inspection",
+      "label": "state, traces",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 55
+    },
+    {
+      "id": "agent-inspection",
+      "from": "agent",
+      "to": "inspection",
+      "label": "трасса шага",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "right"
+    },
+    {
+      "id": "inspection-db",
+      "from": "inspection",
+      "to": "db",
+      "label": "agent_trace",
+      "fromSide": "left",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Основной путь",
+      "items": [
+        "Автор пишет сообщение в редакторе на Vue 3",
+        "Agent собирает промпт и вызывает OpenRouter",
+        "Модель возвращает reply, transition, invariantCheck"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Кто решает переход",
+      "items": [
+        "TaskLifecycle сверяет ребро графа и предусловия",
+        "InvariantGuard проверяет текст без второго вызова LLM",
+        "При отказе кандидат отбрасывается целиком"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Память и границы",
+      "items": [
+        "MemoryRouter пишет только проверенный кандидат",
+        "Вся память в одном файле SQLite",
+        "Ключ OpenRouter не уходит на фронт"
+      ]
+    }
+  ]
+}

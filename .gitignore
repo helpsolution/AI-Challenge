@@ -30,3 +30,12 @@ build/
 *.iws
 .DS_Store
 *.log
+
+# --- Claude Code: локальные скиллы и настройки ---
+.claude/
+skills-lock.json
+
+# --- Archify: артефакты визуальной проверки (регенерируются) ---
+*.visual-check.html
+*.visual-check.json
+*.visual-check.*.png
