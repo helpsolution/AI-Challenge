@@ -35,7 +35,6 @@ build/
 .claude/
 skills-lock.json
 
-# --- Archify: артефакты визуальной проверки (регенерируются) ---
-*.visual-check.html
-*.visual-check.json
-*.visual-check.*.png
+# --- Рантайм-состояние агентов (SQLite) ---
+data/
+*.db
