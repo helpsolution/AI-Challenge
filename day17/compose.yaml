@@ -1,0 +1,31 @@
+# Наружу торчит только MCP-сервер. Сервис пользователей портов не публикует:
+# он доступен исключительно изнутри сети compose, по имени user-service.
+services:
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    environment:
+      DB_PATH: /data/users.db
+    volumes:
+      - users-db:/data
+    restart: unless-stopped
+
+  user-service-mcp:
+    build:
+      context: .
+      dockerfile: user-service-mcp/Dockerfile
+    environment:
+      USERS_API_URL: http://user-service:8097
+      # Домен, по которому сервер видно снаружи: без него защита от DNS rebinding вернёт 403.
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-localhost}
+      # Обязателен: без токена /mcp сможет вызвать кто угодно.
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:?задайте MCP_AUTH_TOKEN перед запуском}
+    ports:
+      - "8098:8098"
+    depends_on:
+      - user-service
+    restart: unless-stopped
+
+volumes:
+  users-db:
