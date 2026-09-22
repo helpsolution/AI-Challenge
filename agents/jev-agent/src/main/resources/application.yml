@@ -1,0 +1,15 @@
+spring:
+  application:
+    name: jev-agent
+  config:
+    import: optional:file:.env[.properties]
+
+server:
+  port: ${PORT:8099}
+
+jev:
+  api-key: ${TYPESAFE_API_KEY:}
+  base-url: ${TYPESAFE_BASE_URL:https://api.typesafe.ai}
+  model: ${TYPESAFE_MODEL:jev-latest}
+  connect-timeout: 10s
+  request-timeout: 35s
