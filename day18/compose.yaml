@@ -1,0 +1,55 @@
+# Три сервиса, которые работают 24/7: сборщик новостей, MCP-слой над ним и агент со сводками.
+# Наружу торчит только MCP-сервер — к нему можно подключить Claude Code или локального агента.
+# Сервис новостей портов не публикует: он доступен исключительно изнутри сети compose.
+#
+# DEEPSEEK_API_KEY и MCP_AUTH_TOKEN compose берёт из day18/.env или из окружения.
+services:
+  news-service:
+    build:
+      context: .
+      dockerfile: news-service/Dockerfile
+    environment:
+      DB_PATH: /data/news.db
+    volumes:
+      - news-db:/data
+    restart: unless-stopped
+
+  news-mcp:
+    build:
+      context: .
+      dockerfile: news-mcp/Dockerfile
+    environment:
+      NEWS_API_URL: http://news-service:8181
+      # Агент ходит по имени сервиса, поэтому news-mcp — тоже допустимый Host, иначе защита от DNS rebinding вернёт 403.
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-localhost,news-mcp}
+      # Обязателен: без токена /mcp сможет вызвать кто угодно, а инструменты меняют подписки.
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:?задайте MCP_AUTH_TOKEN в .env или окружении}
+      # Время в текстах инструментов — в этом поясе; в базе и API оно в UTC.
+      TZ: ${TZ:-Europe/Moscow}
+    ports:
+      - "8182:8182"
+    depends_on:
+      - news-service
+    restart: unless-stopped
+
+  agent:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    environment:
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?задайте DEEPSEEK_API_KEY в .env или окружении}
+      MCP_URL: http://news-mcp:8182/mcp
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN}
+      DIGEST_EVERY_MINUTES: ${DIGEST_EVERY_MINUTES:-30}
+      TZ: ${TZ:-Europe/Moscow}
+    # Терминал держим открытым: к чату подключаются через docker attach, а без подключения
+    # агент просто пишет сводки по таймеру в лог контейнера.
+    stdin_open: true
+    tty: true
+    depends_on:
+      - news-mcp
+    # Если агент стартовал раньше, чем поднялся MCP-сервер, он завершится и compose запустит его снова.
+    restart: unless-stopped
+
+volumes:
+  news-db:

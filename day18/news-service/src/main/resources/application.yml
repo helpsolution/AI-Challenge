@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: news-service
+  threads:
+    virtual:
+      enabled: true
+  sql:
+    init:
+      mode: always
+
+app:
+  database-path: ${DB_PATH:data/news.db}
+
+news:
+  # Как часто планировщик просыпается и проверяет, каким подпискам пора обновиться.
+  # Интервал самой подписки задаётся при подписке, здесь — только точность расписания.
+  tick: ${NEWS_TICK:30s}
+  # Сколько хранить собранные новости: агент работает 24/7, и без чистки база растёт бесконечно.
+  retention: ${NEWS_RETENTION:7d}
+  fetch-timeout: 15s
+  max-feed-size: 5MB
+  user-agent: "day18-news-digest/1.0 (AI Advent Challenge)"
+  # Темы ищутся через RSS Google News. Адрес фиксирован здесь: модель передаёт только текст запроса.
+  google-news:
+    url: https://news.google.com/rss/search
+    language: ru
+    country: RU
+  # Каталог лент. Подписаться можно только на то, что перечислено здесь: произвольный URL
+  # от модели означал бы, что сервер можно заставить сходить куда угодно, в том числе во внутреннюю сеть.
+  sources:
+    tass:
+      title: ТАСС
+      url: https://tass.ru/rss/v2.xml
+    interfax:
+      title: Интерфакс
+      url: https://www.interfax.ru/rss
+    rbc:
+      title: РБК
+      url: https://rssexport.rbc.ru/rbcnews/news/30/full.rss
+    habr:
+      title: Хабр
+      url: https://habr.com/ru/rss/articles/?fl=ru
+
+server:
+  port: ${PORT:8181}
+
+springdoc:
+  swagger-ui:
+    path: /swagger
+    display-request-duration: true
+    operations-sorter: alpha
+  api-docs:
+    path: /api-docs
+
+logging:
+  level:
+    advent.news: INFO
