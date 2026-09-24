@@ -1,0 +1,24 @@
+# Telegram-бот: команды и сводка по таймеру. Ходит только наружу (Telegram, DeepSeek) и в MCP на localhost.
+[Unit]
+Description=Habr digest: Telegram bot
+After=habr-news-mcp.service network-online.target
+Wants=habr-news-mcp.service network-online.target
+
+[Service]
+DynamicUser=yes
+# Курсор сводок переживает перезапуск: systemd передаёт этот каталог боту в STATE_DIRECTORY.
+StateDirectory=habr-digest-bot
+Environment=TZ=Europe/Moscow
+EnvironmentFile=/etc/habr-digest/habr-digest.env
+ExecStart=/usr/bin/java -Xmx64m -Xss512k -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:+ExitOnOutOfMemoryError -jar /opt/habr-digest/bot.jar
+MemoryMax=256M
+# Если MCP ещё не поднялся, бот выходит с ошибкой — через 10 секунд systemd запустит его снова.
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

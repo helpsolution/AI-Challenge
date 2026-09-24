@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: habr-news-service
+  threads:
+    virtual:
+      enabled: true
+  sql:
+    init:
+      mode: always
+
+app:
+  database-path: ${DB_PATH:data/news.db}
+
+news:
+  # Источник один — Хабр. Адрес фиксирован здесь: ни API, ни MCP его не принимают.
+  # limit=100 — Хабр по умолчанию отдаёт 40 статей, а за 15 минут простоя их может выйти больше.
+  feed-url: https://habr.com/ru/rss/articles/?fl=ru&limit=100
+  # Как часто забирать ленту. Планировщик просыпается раз в минуту и сверяет это с временем последнего сбора.
+  every: ${NEWS_EVERY:15m}
+  # Сколько хранить статьи: сервис работает 24/7, и без чистки база растёт бесконечно.
+  retention: ${NEWS_RETENTION:30d}
+  fetch-timeout: 15s
+  max-feed-size: 5MB
+  user-agent: "day18-cloud-habr-digest/1.0 (AI Advent Challenge)"
+
+server:
+  # Только localhost: снаружи к API ходят через SSH-туннель, а бот и MCP живут на той же машине.
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${PORT:8191}
+
+logging:
+  level:
+    advent.habr: INFO

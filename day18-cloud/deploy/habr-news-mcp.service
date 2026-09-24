@@ -1,0 +1,21 @@
+# MCP-сервер: три инструмента поверх API сервиса статей, на 127.0.0.1:8192.
+[Unit]
+Description=Habr digest: MCP server
+After=habr-news-service.service
+Wants=habr-news-service.service
+
+[Service]
+DynamicUser=yes
+Environment=TZ=Europe/Moscow
+EnvironmentFile=/etc/habr-digest/habr-digest.env
+ExecStart=/usr/bin/java -Xmx64m -Xss512k -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:+ExitOnOutOfMemoryError -jar /opt/habr-digest/news-mcp.jar
+MemoryMax=256M
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

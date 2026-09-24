@@ -1,0 +1,25 @@
+# Сервис статей Хабра: планировщик, SQLite и REST API на 127.0.0.1:8191.
+[Unit]
+Description=Habr digest: news service (collector + REST API)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Отдельный системный пользователь, которого systemd создаёт на время работы; база — в /var/lib/habr-digest.
+DynamicUser=yes
+StateDirectory=habr-digest
+Environment=DB_PATH=/var/lib/habr-digest/news.db
+Environment=TZ=Europe/Moscow
+EnvironmentFile=/etc/habr-digest/habr-digest.env
+# Память сервера — 2 ГБ на всё: куча ограничена, C1 вместо C2 экономит память и единственное ядро на JIT.
+ExecStart=/usr/bin/java -Xmx160m -Xss512k -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:+ExitOnOutOfMemoryError -jar /opt/habr-digest/news-service.jar
+MemoryMax=384M
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
