@@ -1,0 +1,25 @@
+# Сервис конвейера: поиск по Хабру, саммаризация через DeepSeek, отчёты в SQLite; REST API на 127.0.0.1:8201.
+[Unit]
+Description=Habr pipeline: service (search, summarize, reports)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Отдельный системный пользователь, которого systemd создаёт на время работы; база — в /var/lib/habr-pipeline.
+DynamicUser=yes
+StateDirectory=habr-pipeline
+Environment=DB_PATH=/var/lib/habr-pipeline/reports.db
+Environment=TZ=Europe/Moscow
+EnvironmentFile=/etc/habr-pipeline/habr-pipeline.env
+# Память сервера — 2 ГБ на всё: куча ограничена, C1 вместо C2 экономит память и единственное ядро на JIT.
+ExecStart=/usr/bin/java -Xmx160m -Xss512k -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:+ExitOnOutOfMemoryError -jar /opt/habr-pipeline/habr-service.jar
+MemoryMax=384M
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

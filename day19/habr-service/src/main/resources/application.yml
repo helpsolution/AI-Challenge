@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: habr-pipeline-service
+  threads:
+    virtual:
+      enabled: true
+  sql:
+    init:
+      mode: always
+  config:
+    # Локально ключ DeepSeek лежит в day19/.env. На сервере файла рядом нет — там те же имена приходят
+    # переменными окружения из EnvironmentFile юнита systemd.
+    import: optional:file:.env[.properties]
+
+app:
+  database-path: ${DB_PATH:data/reports.db}
+
+habr:
+  # Адреса фиксированы здесь: ни API, ни MCP их не принимают, поэтому сервис не превращается в прокси
+  # «скачай что угодно». Запрос и limit дописываются к ним в коде. Поиск сортируется order_by=date:
+  # с order=date Хабр молча отдаёт выдачу по релевантности, и в «свежее по теме» попадают статьи 2019 года.
+  articles-url: https://habr.com/ru/rss/articles/?fl=ru
+  search-url: https://habr.com/ru/rss/search/?target_type=posts&order_by=date&fl=ru
+  fetch-timeout: 15s
+  max-feed-size: 5MB
+  user-agent: "day19-habr-pipeline/1.0 (AI Advent Challenge)"
+
+llm:
+  base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+  api-key: ${DEEPSEEK_API_KEY:}
+  model: ${DEEPSEEK_MODEL:deepseek-chat}
+  timeout: 120s
+
+server:
+  # Только localhost: бот и MCP живут на той же машине, снаружи к API ходят через SSH-туннель.
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${PORT:8201}
+
+logging:
+  level:
+    advent.pipeline: INFO

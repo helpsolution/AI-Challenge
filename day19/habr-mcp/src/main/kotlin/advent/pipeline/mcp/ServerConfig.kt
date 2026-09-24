@@ -1,0 +1,38 @@
+package advent.pipeline.mcp
+
+/**
+ * Вся настройка — через переменные окружения: так сервер одинаково запускается
+ * локально и на VPS под systemd, без правки кода и конфигов.
+ */
+data class ServerConfig(
+    val host: String,
+    val port: Int,
+    val pipelineApiUrl: String,
+    val allowedHosts: List<String>,
+    val authToken: String?,
+) {
+    companion object {
+        const val MCP_PATH = "/mcp"
+
+        private const val DEFAULT_PORT = 8202
+        private const val DEFAULT_PIPELINE_API_URL = "http://localhost:8201"
+
+        /** Значения Host, с которыми сервер работает без дополнительной настройки. */
+        private val LOCALHOST = listOf("localhost", "127.0.0.1", "[::1]")
+
+        fun fromEnvironment(): ServerConfig = ServerConfig(
+            // Только localhost: бот живёт на той же машине, а снаружи к MCP подключаются через SSH-туннель.
+            host = System.getenv("HOST")?.takeIf { it.isNotBlank() } ?: "127.0.0.1",
+            port = System.getenv("PORT")?.toIntOrNull() ?: DEFAULT_PORT,
+            pipelineApiUrl = System.getenv("PIPELINE_API_URL")?.takeIf { it.isNotBlank() } ?: DEFAULT_PIPELINE_API_URL,
+            allowedHosts = System.getenv("MCP_ALLOWED_HOSTS").toHostList() ?: LOCALHOST,
+            authToken = System.getenv("MCP_AUTH_TOKEN")?.takeIf { it.isNotBlank() },
+        )
+
+        private fun String?.toHostList(): List<String>? = this
+            ?.split(",")
+            ?.map(String::trim)
+            ?.filter(String::isNotEmpty)
+            ?.takeIf { it.isNotEmpty() }
+    }
+}

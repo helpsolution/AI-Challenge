@@ -1,0 +1,22 @@
+# Telegram-бот с агентом. Ходит только наружу (Telegram, DeepSeek) и в MCP на localhost.
+[Unit]
+Description=Habr pipeline: Telegram bot with agent
+After=habr-pipeline-mcp.service network-online.target
+Wants=habr-pipeline-mcp.service network-online.target
+
+[Service]
+DynamicUser=yes
+Environment=TZ=Europe/Moscow
+EnvironmentFile=/etc/habr-pipeline/habr-pipeline.env
+ExecStart=/usr/bin/java -Xmx64m -Xss512k -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:+ExitOnOutOfMemoryError -jar /opt/habr-pipeline/bot.jar
+MemoryMax=256M
+# Если MCP ещё не поднялся, бот выходит с ошибкой — через 10 секунд systemd запустит его снова.
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

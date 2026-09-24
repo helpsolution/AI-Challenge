@@ -1,0 +1,21 @@
+# MCP-сервер: четыре инструмента конвейера поверх API habr-service, на 127.0.0.1:8202.
+[Unit]
+Description=Habr pipeline: MCP server
+After=habr-pipeline-service.service
+Wants=habr-pipeline-service.service
+
+[Service]
+DynamicUser=yes
+Environment=TZ=Europe/Moscow
+EnvironmentFile=/etc/habr-pipeline/habr-pipeline.env
+ExecStart=/usr/bin/java -Xmx64m -Xss512k -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:+ExitOnOutOfMemoryError -jar /opt/habr-pipeline/habr-mcp.jar
+MemoryMax=256M
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
