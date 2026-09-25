@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Атлас дня</title><link rel="stylesheet" href="/style.css"><link rel="icon" href="data:,">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/"><span class="brand-icon">◈</span><span>атлас дня<small>ЛИЧНЫЙ ОБЗОР МИРА</small></span></a>
+    <button class="new-chat" id="new-chat"><span>＋</span> Новый разговор</button>
+    <div class="side-label">ВАШ КОНТЕКСТ</div>
+    <label class="city-label" for="city">Город для погоды</label>
+    <div class="city-field"><span>⌖</span><input id="city" value="Москва" maxlength="100" autocomplete="address-level2"></div>
+    <div class="side-label sources-label">ИСТОЧНИКИ <button id="refresh" title="Обновить состояние серверов" aria-label="Обновить состояние серверов">↻</button></div>
+    <div id="servers" class="servers">
+      <div class="source"><span class="source-symbol">☀</span><div>Погода<small>Open-Meteo</small></div><i></i></div>
+      <div class="source"><span class="source-symbol">≋</span><div>Повестка<small>Хабр</small></div><i></i></div>
+      <div class="source"><span class="source-symbol">✧</span><div>Изображения<small>OpenRouter</small></div><i></i></div>
+    </div>
+    <div class="sidebar-bottom"><span class="local-dot"></span> Работает локально<a id="swagger" href="http://localhost:8213/swagger" target="_blank" rel="noopener">API изображений ↗</a></div>
+  </aside>
+  <main>
+    <header><span class="eyebrow">ПОГОДА · ТЕХНОЛОГИИ · ВООБРАЖЕНИЕ</span><span id="date" class="date"></span></header>
+    <div id="scroll-area">
+      <section id="welcome" class="welcome">
+        <div class="edition"><span></span> ВАШ ДЕНЬ, В ОДНОМ РАЗГОВОРЕ</div>
+        <h1>Что принесёт<br><em>сегодня?</em></h1>
+        <p>Узнайте погоду, разберитесь в новостях<br class="desktop-break"> или превратите повестку дня в картину.</p>
+        <div class="suggestions">
+          <button data-prompt="Сделай краткую сводку за сегодняшний день: погода и главные новости Хабра."><span class="card-icon warm">☀</span><strong>Собрать мой день</strong><span>Погода и главное с Хабра</span><b>↗</b></button>
+          <button data-prompt="Покажи до 10 новых и популярных публикаций Хабра об искусственном интеллекте списком со ссылками."><span class="card-icon cool">≋</span><strong>Что нового в ИИ?</strong><span>Публикации со ссылками</span><b>↗</b></button>
+          <button data-prompt="Создай картинку сегодняшнего дня: узнай погоду и главные новости Хабра за сегодня, затем изобрази их в виде атмосферного редакционного коллажа."><span class="card-icon purple">✧</span><strong>Нарисовать сегодня</strong><span>Один день — одна картина</span><b>↗</b></button>
+        </div>
+      </section>
+      <section id="messages" class="messages" aria-live="polite" aria-label="Сообщения чата"></section>
+    </div>
+    <div class="composer-wrap">
+      <div id="notice" class="notice" role="status"></div>
+      <form id="composer"><textarea id="input" rows="1" maxlength="8000" placeholder="Что вы хотите узнать или создать?" aria-label="Сообщение"></textarea><button type="submit" id="send" aria-label="Отправить сообщение">↑</button></form>
+      <div class="composer-note"><span>Три источника. Один разговор.</span><span>Enter — отправить · Shift + Enter — новая строка</span></div>
+    </div>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
