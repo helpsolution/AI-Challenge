@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG-агент — день 22</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  .page { max-width: 880px; margin-inline: auto; padding: var(--space-6) var(--space-4) 0; }
+  .feed { padding-bottom: var(--space-6); }
+
+  .question { align-self: flex-end; max-width: 85%; padding: var(--space-3) var(--space-4);
+              background: var(--color-elevated); border: 1px solid var(--color-border);
+              border-radius: var(--radius-lg); white-space: pre-wrap; }
+  .answer-text { white-space: pre-wrap; color: var(--color-text-primary); line-height: 1.6; }
+  .meta { color: var(--color-text-muted); }
+
+  .sources { border-top: 1px solid var(--color-border); padding-top: var(--space-4); }
+  .source { border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+  .source summary { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3);
+                    cursor: pointer; list-style: none; }
+  .source summary::-webkit-details-marker { display: none; }
+  .source[open] summary { border-bottom: 1px solid var(--color-border); }
+  .source-number { font-family: var(--font-mono); font-weight: 600; color: var(--color-info); min-width: 2.2em; }
+  .source-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .source-body { padding: var(--space-3); white-space: pre-wrap; color: var(--color-text-secondary); }
+
+  .prompt summary { cursor: pointer; color: var(--color-text-secondary); }
+  .prompt-message { border-left: 2px solid var(--color-border-strong); padding-left: var(--space-3); }
+  .prompt-message pre { margin: var(--space-1) 0 0; white-space: pre-wrap; font-family: var(--font-mono);
+                        font-size: 0.8125rem; color: var(--color-text-secondary); }
+
+  .composer { position: sticky; bottom: 0; padding: var(--space-4) 0 var(--space-6);
+              background: linear-gradient(to bottom, transparent, var(--color-background) 24px); }
+  .composer .card { padding: var(--space-4); gap: var(--space-3); }
+  .composer .textarea { resize: vertical; min-height: 72px; }
+  .rag-toggle { display: inline-flex; align-items: center; gap: var(--space-3); cursor: pointer; }
+
+  .trace-link { color: var(--color-primary); text-decoration: none; }
+  .trace-link:hover { text-decoration: underline; }
+
+  @media (max-width: 640px) {
+    .question { max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="nav">
+    <div class="nav-brand">
+      <span class="nav-mark">R</span>
+      <span>RAG-агент</span>
+      <span class="t-body-sm t-muted">день 22</span>
+    </div>
+    <nav class="tabs" aria-label="Разделы">
+      <a class="tab" href="/" aria-selected="true">Чат</a>
+      <a class="tab" href="/inside.html">Внутри агента</a>
+    </nav>
+    <div class="nav-spacer"></div>
+    <template v-if="knowledge.chunks">
+      <span class="chip" data-tone="info">
+        {{ knowledge.documents }} {{ plural(knowledge.documents, 'документ', 'документа', 'документов') }} ·
+        {{ knowledge.chunks }} {{ plural(knowledge.chunks, 'чанк', 'чанка', 'чанков') }}
+      </span>
+      <span class="t-mono-sm t-muted">{{ knowledge.model }} · {{ knowledge.chunk_size }}/{{ knowledge.overlap }}</span>
+    </template>
+    <span v-else-if="knowledgeLoaded" class="chip" data-tone="warning">База знаний не собрана</span>
+  </header>
+
+  <main class="page">
+    <section class="feed stack stack-lg" aria-live="polite">
+      <div v-if="!turns.length" class="card">
+        <div class="card-title">Задайте вопрос</div>
+        <p class="card-body">
+          С галочкой RAG агент сначала находит в базе знаний фрагменты, похожие на вопрос, и отвечает по ним,
+          со ссылками на номера фрагментов. Без галочки модель отвечает из того, что запомнила при обучении.
+        </p>
+      </div>
+
+      <div v-for="turn in turns" :key="turn.id" class="stack stack-sm">
+        <div class="question">{{ turn.question }}</div>
+
+        <article v-if="turn.pending" class="card">
+          <div class="row">
+            <span class="chip" :data-tone="turn.rag ? 'info' : 'neutral'">{{ turn.rag ? 'С RAG' : 'Без RAG' }}</span>
+            <span class="t-body-sm t-muted">{{ turn.rag ? 'Ищу фрагменты и спрашиваю модель…' : 'Спрашиваю модель…' }}</span>
+          </div>
+        </article>
+
+        <article v-else-if="turn.error" class="card card-accent" data-accent="danger">
+          <div class="row">
+            <span class="chip" data-tone="danger">Ошибка</span>
+            <span class="chip" :data-tone="turn.rag ? 'info' : 'neutral'">{{ turn.rag ? 'С RAG' : 'Без RAG' }}</span>
+          </div>
+          <div class="answer-text">{{ turn.error }}</div>
+        </article>
+
+        <article v-else class="card">
+          <div class="row-between" style="flex-wrap: wrap">
+            <span class="chip" :data-tone="turn.result.mode === 'rag' ? 'info' : 'neutral'">
+              {{ turn.result.mode === 'rag' ? 'С RAG' : 'Без RAG' }}
+            </span>
+            <span class="t-mono-sm meta">{{ metaLine(turn.result) }}</span>
+          </div>
+
+          <div class="answer-text">
+            <template v-for="(part, i) in splitCitations(turn.result.answer)" :key="i">
+              <span v-if="part.cite" class="cite" :title="citeTitle(turn.result, part.numbers)">{{ part.text }}</span>
+              <template v-else>{{ part.text }}</template>
+            </template>
+          </div>
+
+          <div v-if="turn.result.mode === 'rag'" class="sources stack stack-sm">
+            <div class="t-label-sm t-secondary">Фрагменты из базы знаний</div>
+            <details v-for="s in turn.result.sources" :key="s.chunkId" class="source">
+              <summary>
+                <span class="source-number">[{{ s.number }}]</span>
+                <span class="source-title t-body-sm">{{ s.title }}</span>
+                <span class="t-mono-sm t-muted">{{ s.score.toFixed(3) }}</span>
+              </summary>
+              <div class="source-body t-body-sm">{{ s.text }}</div>
+              <div class="t-mono-sm t-muted" style="padding: 0 var(--space-3) var(--space-3)">{{ s.chunkId }}</div>
+            </details>
+          </div>
+
+          <a class="trace-link t-body-sm" :href="'/inside.html?trace=' + turn.result.traceId">
+            Как агент пришёл к этому ответу — по шагам →
+          </a>
+
+          <details class="prompt">
+            <summary class="t-body-sm">Промпт, отправленный модели</summary>
+            <div class="stack stack-sm" style="margin-top: var(--space-3)">
+              <div v-for="(m, i) in turn.result.prompt" :key="i" class="prompt-message">
+                <div class="t-label-sm t-muted">{{ m.role }}</div>
+                <pre>{{ m.content }}</pre>
+              </div>
+            </div>
+          </details>
+        </article>
+      </div>
+    </section>
+
+    <form class="composer" @submit.prevent="ask">
+      <div class="card">
+        <label class="field-label" for="question">Вопрос</label>
+        <textarea id="question" class="textarea" v-model="question" rows="2"
+                  placeholder="Enter — отправить, Shift+Enter — новая строка"
+                  @keydown.enter.exact.prevent="ask"></textarea>
+        <div class="row-between">
+          <label class="rag-toggle">
+            <span class="switch">
+              <input type="checkbox" v-model="useRag">
+              <span class="switch-track"></span>
+              <span class="switch-thumb"></span>
+            </span>
+            <span class="t-body-md">Искать в базе знаний (RAG)</span>
+          </label>
+          <button class="btn btn-primary" type="submit" :disabled="busy || !question.trim()">
+            <svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                 stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>
+            </svg>
+            Спросить
+          </button>
+        </div>
+      </div>
+    </form>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, ref, nextTick, onMounted } = Vue;
+
+createApp({
+  setup() {
+    const question = ref('');
+    const useRag = ref(true);
+    const busy = ref(false);
+    const turns = ref([]);
+    const knowledge = ref({});
+    const knowledgeLoaded = ref(false);
+    let nextId = 1;
+
+    async function loadKnowledge() {
+      try {
+        const response = await fetch('/api/knowledge');
+        knowledge.value = response.ok ? await response.json() : {};
+      } finally {
+        knowledgeLoaded.value = true;
+      }
+    }
+
+    async function ask() {
+      const text = question.value.trim();
+      if (!text || busy.value) return;
+      turns.value.push({ id: nextId++, question: text, rag: useRag.value, pending: true });
+      // Реактивная копия из массива: изменения её полей перерисовывают карточку.
+      const current = turns.value[turns.value.length - 1];
+      question.value = '';
+      busy.value = true;
+      scrollDown();
+      try {
+        const response = await fetch('/api/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: text, rag: current.rag }),
+        });
+        const body = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
+        if (response.ok) current.result = body;
+        else current.error = body.message || `HTTP ${response.status}`;
+      } catch (e) {
+        current.error = `Сервис не ответил: ${e.message}`;
+      } finally {
+        current.pending = false;
+        busy.value = false;
+        scrollDown();
+      }
+    }
+
+    function scrollDown() {
+      nextTick(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+    }
+
+    /** Ссылки на фрагменты — [2], [1, 3], [1][3] — выделяются, чтобы было видно, откуда утверждение. */
+    function splitCitations(text) {
+      const parts = [];
+      const pattern = /\[(\d+(?:\s*[,;]\s*\d+)*)\]/g;
+      let last = 0;
+      for (const match of text.matchAll(pattern)) {
+        if (match.index > last) parts.push({ text: text.slice(last, match.index) });
+        parts.push({ text: match[0], cite: true, numbers: match[1].split(/[,;]/).map(n => Number(n.trim())) });
+        last = match.index + match[0].length;
+      }
+      if (last < text.length) parts.push({ text: text.slice(last) });
+      return parts;
+    }
+
+    function citeTitle(result, numbers) {
+      if (result.mode !== 'rag') return '';
+      return numbers.map(n => {
+        const s = result.sources.find(source => source.number === n);
+        return s ? `[${n}] ${s.title}` : `[${n}] — такого фрагмента не было`;
+      }).join('\n');
+    }
+
+    function metaLine(result) {
+      const llm = result.llm;
+      const tokens = llm.promptTokens != null ? `${llm.promptTokens} → ${llm.completionTokens} ток.` : '';
+      const parts = [llm.model, tokens, `${(llm.durationMs / 1000).toFixed(1)} с`];
+      if (result.mode === 'rag') parts.push(`поиск ${result.retrievalMs} мс`);
+      return parts.filter(Boolean).join(' · ');
+    }
+
+    /** 1 чанк, 3 чанка, 193 чанка, 14 документов. */
+    function plural(value, one, few, many) {
+      const n = Number(value), mod10 = n % 10, mod100 = n % 100;
+      if (mod10 === 1 && mod100 !== 11) return one;
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+      return many;
+    }
+
+    onMounted(loadKnowledge);
+
+    return { question, useRag, busy, turns, knowledge, knowledgeLoaded, ask, splitCitations, citeTitle, metaLine, plural };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
