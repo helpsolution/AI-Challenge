@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: day21-rag-service
+  threads:
+    virtual:
+      enabled: true
+
+ollama:
+  # Адрес задаётся только конфигурацией: API его не принимает, поэтому сервис не ходит по чужим URL.
+  base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+  model: ${OLLAMA_EMBED_MODEL:nomic-embed-text}
+  # Первый запрос после простоя дольше: Ollama заново поднимает модель в память.
+  timeout: 60s
+  # nomic-embed-text обучали с префиксом задачи: документы — "search_document: ", вопросы — "search_query: ".
+  # Префикс ставит индексатор; песочница /api/embeddings отдаёт текст модели как есть.
+  document-prefix: "search_document: "
+
+index:
+  # Markdown-документы корпуса, с необязательной шапкой YAML (title, url).
+  corpus-dir: data/corpus
+  # Здесь появятся fixed-size.db и structural.db.
+  dir: data/index
+
+server:
+  # Только localhost: снаружи этот сервис пока никому не нужен.
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${PORT:8230}
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger
+    # Поля запроса сразу редактируются, без лишнего клика по «Try it out».
+    try-it-out-enabled: true
+
+logging:
+  level:
+    advent.rag: INFO
