@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: day24-rag-agent
+  threads:
+    virtual:
+      enabled: true
+  config:
+    import: optional:file:.env[.properties]
+
+llm:
+  base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+  api-key: ${DEEPSEEK_API_KEY:}
+  model: ${DEEPSEEK_MODEL:deepseek-flash}
+  temperature: 0.2
+  timeout: 120s
+
+ollama:
+  base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+  model: ${OLLAMA_EMBED_MODEL:nomic-embed-text}
+  timeout: 60s
+  document-prefix: "search_document: "
+  query-prefix: "search_query: "
+
+knowledge:
+  corpus-dir: data/corpus
+  index-file: data/index/knowledge.db
+  # Размеры в символах, не токенах.
+  target-chars: 1400
+  max-chars: 2200
+
+retrieval:
+  top-k: ${RETRIEVAL_TOP_K:5}
+  candidate-k: ${RETRIEVAL_CANDIDATE_K:20}
+  # Сырая оценка BGE. Фрагменты ниже порога не идут в промпт; если не прошёл ни один — «не знаю».
+  min-rerank-score: ${RETRIEVAL_MIN_RERANK_SCORE:0.0}
+
+reranker:
+  base-url: ${RERANKER_BASE_URL:http://127.0.0.1:8012}
+  timeout: ${RERANKER_TIMEOUT:120s}
+
+query-rewrite:
+  enabled: ${QUERY_REWRITE_ENABLED:true}
+
+server:
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${PORT:8250}
+
+logging:
+  level:
+    advent.rag: INFO
