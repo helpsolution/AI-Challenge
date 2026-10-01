@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG-агент — день 23</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  .page { max-width: 880px; margin-inline: auto; padding: var(--space-6) var(--space-4) 0; }
+  .feed { padding-bottom: var(--space-6); }
+
+  .question { align-self: flex-end; max-width: 85%; padding: var(--space-3) var(--space-4);
+              background: var(--color-elevated); border: 1px solid var(--color-border);
+              border-radius: var(--radius-lg); white-space: pre-wrap; }
+  .answer-text { white-space: pre-wrap; color: var(--color-text-primary); line-height: 1.6; }
+  .meta { color: var(--color-text-muted); }
+
+  .sources { border-top: 1px solid var(--color-border); padding-top: var(--space-4); }
+  .source { border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+  .source summary { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3);
+                    cursor: pointer; list-style: none; }
+  .source summary::-webkit-details-marker { display: none; }
+  .source[open] summary { border-bottom: 1px solid var(--color-border); }
+  .source-number { font-family: var(--font-mono); font-weight: 600; color: var(--color-info); min-width: 2.2em; }
+  .source-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .source-body { padding: var(--space-3); white-space: pre-wrap; color: var(--color-text-secondary); }
+
+  .prompt summary { cursor: pointer; color: var(--color-text-secondary); }
+  .prompt-message { border-left: 2px solid var(--color-border-strong); padding-left: var(--space-3); }
+  .prompt-message pre { margin: var(--space-1) 0 0; white-space: pre-wrap; font-family: var(--font-mono);
+                        font-size: 0.8125rem; color: var(--color-text-secondary); }
+
+  .composer { position: sticky; bottom: 0; padding: var(--space-4) 0 var(--space-6);
+              background: linear-gradient(to bottom, transparent, var(--color-background) 24px); }
+  .composer .card { padding: var(--space-4); gap: var(--space-3); }
+  .composer .textarea { resize: vertical; min-height: 72px; }
+  .rag-toggle { display: inline-flex; align-items: center; gap: var(--space-3); cursor: pointer; }
+  .retrieval-controls { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+  .composer .row-between { flex-wrap: wrap; gap: var(--space-3); }
+
+  .trace-link { color: var(--color-primary); text-decoration: none; }
+  .trace-link:hover { text-decoration: underline; }
+
+  @media (max-width: 640px) {
+    .question { max-width: 100%; }
+  }
+
+  body { background: #fff; }
+  .nav { position: sticky; top: 0; z-index: 3; background: #fff; min-height: 68px; }
+  .sidebar { position: fixed; left: 0; top: 68px; bottom: 0; width: 250px; padding: 32px 22px; background: #f6f7fb; border-right: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 18px; }
+  .sidebar-label { font-size: 10px; letter-spacing: 1.6px; color: var(--color-text-muted); }
+  .sidebar-section { margin-top: 24px; font-size: 12px; color: var(--color-text-muted); }
+  .sidebar-title { font-size: 17px; font-weight: 600; }
+  .sidebar p { margin: 0; line-height: 1.6; }
+  .sidebar-facts { font-size: 12px; color: var(--color-text-secondary); }
+  .sidebar-bottom { margin-top: auto; font-size: 11px; line-height: 1.9; color: var(--color-text-muted); }
+  .page { margin-left: calc(250px + max(24px, (100vw - 1130px)/2)); margin-right: max(24px, (100vw - 1130px)/2); max-width: 880px; padding-top: 32px; }
+  .welcome { min-height: 55vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 30px 0; }
+  .welcome-mark { width: 46px; height: 46px; display: grid; place-items: center; color: var(--color-primary); background: var(--color-primary-soft); border-radius: 14px; font-size: 24px; font-weight: 600; }
+  .welcome h1 { font-size: clamp(24px, 3vw, 32px); margin: 24px 0 14px; font-weight: 600; letter-spacing: -.8px; }
+  .welcome p { font-size: 15px; line-height: 1.8; color: var(--color-text-secondary); margin: 0 0 32px; }
+  .suggestions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; max-width: 600px; }
+  .suggestion { background: #fff; padding: 18px; text-align: left; border: 1px solid var(--color-border); border-radius: 12px; font: inherit; font-size: 13px; cursor: pointer; display: flex; gap: 20px; justify-content: space-between; }
+  .suggestion:hover { background: #f6f7fb; border-color: var(--color-primary); }
+  .suggestion span { color: var(--color-text-muted); }
+  .assistant-answer { border: 0; box-shadow: none; padding-inline: 0; background: transparent; }
+  .question { border: 0; background: #f1f3f8; border-radius: 20px 20px 4px 20px; }
+  .composer { background: linear-gradient(transparent, #fff 24px); }
+  .composer .card { border-radius: 20px; box-shadow: 0 4px 24px rgba(20,30,70,.05); }
+  .composer .textarea { border: 0; padding: 8px 0; min-height: 64px; box-shadow: none; }
+  .composer .select { width: auto; min-width: 120px; font-size: 13px; }
+  .composer .field-label { font-size: 12px; color: var(--color-text-secondary); }
+  .source-title small { display: block; font-size: 11px; color: var(--color-text-muted); margin-top: 3px; white-space: normal; }
+  .citation-link { display: inline; color: var(--color-primary); font: inherit; border: 0; padding: 0 2px; background: var(--color-primary-soft); border-radius: 4px; cursor: pointer; }
+  .source-original { display: block; margin: 0 16px 16px; color: var(--color-primary); font-size: 12px; }
+  .route-reason { font-size: 12px; }
+  .warning, .index-error { color: var(--color-warning); font-size: 12px; }
+  .chunk-dialog { width: min(850px, 95vw); max-height: 85vh; padding: 28px; border: 1px solid var(--color-border); border-radius: 18px; color: var(--color-text-primary); }
+  .chunk-dialog::backdrop { background: rgba(20, 25, 45, .35); }
+  .chunk-dialog h2 { font-size: 20px; margin: 0; }
+  .browse-source { margin-top: 12px; padding: 4px; }
+  .chunk-paging { margin-top: 24px; }
+  @media (max-width: 900px) { .sidebar { width: 210px; padding: 26px 16px; } .page { margin-left: 226px; margin-right: 16px; } .nav > .t-mono-sm { display: none; } }
+  @media (max-width: 640px) { .sidebar { position: static; width: auto; border-right: 0; padding: 12px 16px; flex-direction: row; flex-wrap: wrap; gap: 8px; } .sidebar-label, .sidebar-section, .sidebar-title, .sidebar p:not(.index-error), .sidebar-facts, .sidebar-bottom { display:none; } .sidebar .btn { font-size: 11px; padding: 8px; } .page { margin: 0; padding: 16px; } .welcome { min-height: 46vh; } .suggestions { grid-template-columns: 1fr; } .desktop-only { display: none; } .nav-brand .t-muted { display:none; } .nav > .chip { font-size:10px; } .chunk-dialog { padding: 16px; } }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="nav">
+    <div class="nav-brand">
+      <span class="nav-mark">R</span>
+      <span>RAG-агент</span>
+      <span class="t-body-sm t-muted">день 23</span>
+    </div>
+    <nav class="tabs" aria-label="Разделы">
+      <a class="tab" href="/" aria-selected="true">Чат</a>
+      <a class="tab" href="/inside.html">Внутри агента</a>
+    </nav>
+    <div class="nav-spacer"></div>
+    <template v-if="knowledge.chunks">
+      <span class="chip" data-tone="info">
+        {{ knowledge.documents }} {{ plural(knowledge.documents, 'документ', 'документа', 'документов') }} ·
+        {{ knowledge.chunks }} {{ plural(knowledge.chunks, 'чанк', 'чанка', 'чанков') }}
+      </span>
+      <span class="t-mono-sm t-muted">{{ knowledge.model }} · по структуре</span>
+    </template>
+    <span v-else-if="knowledgeLoaded" class="chip" data-tone="warning">База знаний не собрана</span>
+  </header>
+
+  <aside class="sidebar">
+      <div class="sidebar-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
+      <button class="btn btn-primary" @click="newChat" :disabled="busy">＋ Новый диалог</button>
+      <div class="sidebar-section">База знаний</div>
+      <div class="sidebar-title">Системный дизайн</div>
+      <p class="t-body-sm t-secondary">Лекции по архитектуре, НФТ и проектированию систем.</p>
+      <div class="sidebar-facts">{{ knowledge.documents || '—' }} лекций · {{ knowledge.chunks || '—' }} фрагментов</div>
+      <button class="btn btn-secondary" @click="browseChunks()">Посмотреть фрагменты</button>
+      <button class="btn btn-ghost" @click="rebuild" :disabled="rebuilding || busy">{{ rebuilding ? 'Собираю индекс…' : 'Пересобрать индекс' }}</button>
+      <p v-if="indexError" class="index-error" role="alert">{{ indexError }}</p>
+    <div class="sidebar-bottom">День 23 · Реранкинг<br>Ollama + BGE + DeepSeek + SQLite</div>
+    </aside>
+  <main class="page">
+    <section class="feed stack stack-lg" aria-live="polite">
+      <div v-if="!turns.length" class="welcome">
+        <div class="welcome-mark">R</div>
+        <h1>Разберёмся в системном дизайне</h1>
+        <p>Задавай вопросы по лекциям. Я найду нужные фрагменты<br class="desktop-only"> и покажу, на что опирается ответ.</p>
+        <div class="suggestions">
+          <button v-for="example in examples" :key="example" @click="question = example" class="suggestion">{{ example }} <span>↗</span></button>
+        </div>
+      </div>
+
+      <div v-for="turn in turns" :key="turn.id" class="stack stack-sm">
+        <div class="question">{{ turn.question }}</div>
+
+        <article v-if="turn.pending" class="card">
+          <div class="row">
+            <span class="chip" :data-tone="turn.mode === 'rag' ? 'info' : 'neutral'">{{ modeLabel(turn.mode) }}</span>
+            <span class="t-body-sm t-muted">{{ turn.mode === 'auto' ? 'Выбираю, нужен ли поиск по лекциям…' : 'Готовлю ответ…' }}</span>
+          </div>
+        </article>
+
+        <article v-else-if="turn.error" class="card card-accent" data-accent="danger">
+          <div class="row">
+            <span class="chip" data-tone="danger">Ошибка</span>
+            <span class="chip" :data-tone="turn.mode === 'rag' ? 'info' : 'neutral'">{{ modeLabel(turn.mode) }}</span>
+          </div>
+          <div class="answer-text">{{ turn.error }}</div>
+        </article>
+
+        <article v-else class="card assistant-answer">
+          <div class="row-between" style="flex-wrap: wrap">
+            <span class="chip" :data-tone="turn.result.mode === 'rag' ? 'info' : 'neutral'">
+              {{ turn.result.mode === 'rag' ? 'С RAG' : 'Без RAG' }}
+            </span>
+            <span class="t-mono-sm meta">{{ metaLine(turn.result) }}</span>
+          </div>
+
+          <div class="route-reason t-body-sm t-secondary">{{ turn.result.route.reason }}</div>
+          <div v-if="turn.result.reranking" class="t-body-sm t-secondary">{{ turn.result.reranking.enabled ? 'Cross-encoder: ' + turn.result.reranking.candidateK + ' кандидатов → ' + turn.result.reranking.topK + ' фрагментов · ' + turn.result.reranking.durationMs + ' мс' : 'Реранкинг выключен · top-' + turn.result.reranking.topK + ' по косинусу' }}</div>
+          <details v-if="turn.result.rewriting" class="prompt">
+            <summary class="t-body-sm">Поисковый запрос · {{ rewriteLabel(turn.result.rewriting.status) }} · {{ turn.result.rewriting.durationMs }} мс</summary>
+            <div class="stack stack-sm" style="margin-top: var(--space-3)">
+              <div class="t-body-sm t-secondary">{{ turn.result.rewriting.reason }}</div>
+              <div class="prompt-message"><div class="t-label-sm t-muted">Исходный вопрос</div><pre>{{ turn.result.rewriting.input }}</pre></div>
+              <div class="prompt-message"><div class="t-label-sm t-muted">Запрос для поиска и реранкера</div><pre>{{ turn.result.rewriting.query }}</pre></div>
+            </div>
+          </details>
+          <div v-for="warning in turn.result.warnings" :key="warning" class="warning t-body-sm">{{ warning }}</div>
+          <div class="answer-text">
+            <template v-for="(part, i) in splitCitations(turn.result.answer)" :key="i">
+              <button v-if="part.cite && turn.result.mode === 'rag'" class="citation-link" :title="citeTitle(turn.result, part.numbers)" @click="openSource(turn.id, part.numbers[0])">{{ part.text }}</button>
+              <template v-else>{{ part.text }}</template>
+            </template>
+          </div>
+
+          <div v-if="turn.result.mode === 'rag'" class="sources stack stack-sm">
+            <div class="t-label-sm t-secondary">Фрагменты из базы знаний</div>
+            <details v-for="s in turn.result.sources" :key="s.chunkId" :id="'source-' + turn.id + '-' + s.number" class="source">
+              <summary>
+                <span class="source-number">[{{ s.number }}]</span>
+                <span class="source-title t-body-sm">{{ s.title }}<small>{{ s.section }}</small></span><span v-if="s.used" class="chip" data-tone="info">В ответе</span>
+                <span class="t-mono-sm t-muted" :title="'Косинус: ' + s.score.toFixed(3)">{{ s.rerankScore != null ? 'rerank ' + s.rerankScore.toFixed(3) : 'cos ' + s.score.toFixed(3) }}</span>
+              </summary>
+              <div class="source-body t-body-sm">{{ s.text }}</div>
+              <div class="t-mono-sm t-muted" style="padding: 0 var(--space-3) var(--space-3)">Косинус {{ s.score.toFixed(3) }}<template v-if="s.rerankScore != null"> · Cross-encoder {{ s.rerankScore.toFixed(3) }} — оценка, не вероятность</template></div>
+              <a v-if="safeUrl(s.url)" :href="safeUrl(s.url)" target="_blank" rel="noopener noreferrer" class="source-original">Открыть оригинальную лекцию ↗</a>
+              <div class="t-mono-sm t-muted" style="padding: 0 var(--space-3) var(--space-3)">{{ s.chunkId }}</div>
+            </details>
+          </div>
+
+          <a class="trace-link t-body-sm" :href="'/inside.html?trace=' + turn.result.traceId">
+            Как агент пришёл к этому ответу — по шагам →
+          </a>
+
+          <details class="prompt">
+            <summary class="t-body-sm">Промпт, отправленный модели</summary>
+            <div class="stack stack-sm" style="margin-top: var(--space-3)">
+              <div v-for="(m, i) in turn.result.prompt" :key="i" class="prompt-message">
+                <div class="t-label-sm t-muted">{{ m.role }}</div>
+                <pre>{{ m.content }}</pre>
+              </div>
+            </div>
+          </details>
+        </article>
+      </div>
+    </section>
+
+    <form class="composer" @submit.prevent="ask">
+      <div class="card">
+        <label class="field-label" for="question">Вопрос</label>
+        <textarea id="question" class="textarea" v-model="question" rows="2"
+                  placeholder="Enter — отправить, Shift+Enter — новая строка"
+                  @keydown.enter.exact.prevent="ask"></textarea>
+        <div class="row-between">
+          <div class="retrieval-controls">
+          <label class="rag-toggle" for="mode"><span class="t-body-sm">Источники</span>
+          <select id="mode" class="select" v-model="mode" :disabled="busy">
+            <option value="auto">Авто</option><option value="rag">По лекциям</option><option value="plain">Без RAG</option>
+          </select></label>
+          <label class="rag-toggle t-body-sm" for="rerank"><input id="rerank" type="checkbox" v-model="rerank" :disabled="busy || mode === 'plain'">Реранкинг</label>
+          <label class="rag-toggle t-body-sm" for="rewrite"><input id="rewrite" type="checkbox" v-model="rewrite" :disabled="busy || mode === 'plain'">Query rewrite</label>
+          </div>
+          <button class="btn btn-primary" type="submit" :disabled="busy || !question.trim()">
+            <svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                 stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>
+            </svg>
+            Спросить
+          </button>
+        </div>
+      </div>
+    </form>
+  </main>
+  <dialog id="chunk-dialog" class="chunk-dialog">
+    <div class="row-between"><h2>Фрагменты лекций</h2><button class="btn btn-ghost" @click="documentClose">Закрыть ✕</button></div>
+    <p class="t-body-sm t-secondary">Структурная нарезка: {{ knowledge.target_chars }} символов — цель, {{ knowledge.max_chars }} — предел блока.</p>
+    <p v-if="chunkLoading">Загружаю…</p><p v-if="chunkError" role="alert">{{ chunkError }}</p>
+    <details v-for="chunk in chunks" :key="chunk.chunkId" class="source browse-source">
+      <summary>{{ chunk.title }} · {{ chunk.section || 'Введение' }}</summary>
+      <div class="source-body t-body-sm">{{ chunk.content }}</div>
+      <div class="t-mono-sm t-muted">{{ chunk.chunkId }} · {{ chunk.content.length }} символов</div>
+    </details>
+    <div class="row-between chunk-paging"><button class="btn btn-secondary" @click="browseChunks(chunkOffset - 20)" :disabled="chunkOffset === 0 || chunkLoading">← Назад</button><span>{{ chunkOffset + 1 }}–{{ chunkOffset + chunks.length }}</span><button class="btn btn-secondary" @click="browseChunks(chunkOffset + 20)" :disabled="chunks.length < 20 || chunkLoading || chunkOffset + chunks.length >= Number(knowledge.chunks)">Дальше →</button></div>
+  </dialog>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, ref, nextTick, onMounted } = Vue;
+
+createApp({
+  setup() {
+    const question = ref('');
+    const mode = ref('auto');
+    const rerank = ref(true);
+    const rewrite = ref(true);
+    const rebuilding = ref(false);
+    const indexError = ref('');
+    const chunks = ref([]);
+    const chunkOffset = ref(0);
+    const chunkLoading = ref(false);
+    const chunkError = ref('');
+    const examples = ['Чем доступность отличается от надёжности?', 'Что должно быть в ADR?', 'Объясни уровни модели C4', 'Как связаны MTBF, MTTR и доступность?'];
+    const busy = ref(false);
+    const turns = ref([]);
+    const knowledge = ref({});
+    const knowledgeLoaded = ref(false);
+    let nextId = 1;
+
+    async function loadKnowledge() {
+      try {
+        const response = await fetch('/api/knowledge/status');
+        const status = await response.json();
+        knowledge.value = status.meta || {};
+        indexError.value = status.error || '';
+      } catch (e) { indexError.value = e.message;
+      } finally {
+        knowledgeLoaded.value = true;
+      }
+    }
+
+    async function ask() {
+      const text = question.value.trim();
+      if (!text || busy.value) return;
+      turns.value.push({ id: nextId++, question: text, mode: mode.value, rerank: rerank.value, rewrite: rewrite.value, pending: true });
+      const current = turns.value[turns.value.length - 1];
+      question.value = '';
+      busy.value = true;
+      scrollDown();
+      try {
+        const response = await fetch('/api/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: text, mode: current.mode, rerank: current.rerank, rewrite: current.rewrite, history: turns.value.filter(t => t.result).slice(-3).flatMap(t => [{role: 'user', content: t.question}, {role: 'assistant', content: t.result.answer.slice(0, 4000)}]) }),
+        });
+        const body = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
+        if (response.ok) current.result = body;
+        else current.error = body.message || `HTTP ${response.status}`;
+      } catch (e) {
+        current.error = `Сервис не ответил: ${e.message}`;
+      } finally {
+        current.pending = false;
+        busy.value = false;
+        scrollDown();
+      }
+    }
+
+    function scrollDown() {
+      nextTick(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+    }
+
+
+    function splitCitations(text) {
+      const parts = [];
+      const pattern = /\[(\d+(?:\s*[,;]\s*\d+)*)\]/g;
+      let last = 0;
+      for (const match of text.matchAll(pattern)) {
+        if (match.index > last) parts.push({ text: text.slice(last, match.index) });
+        parts.push({ text: match[0], cite: true, numbers: match[1].split(/[,;]/).map(n => Number(n.trim())) });
+        last = match.index + match[0].length;
+      }
+      if (last < text.length) parts.push({ text: text.slice(last) });
+      return parts;
+    }
+
+    function citeTitle(result, numbers) {
+      if (result.mode !== 'rag') return '';
+      return numbers.map(n => {
+        const s = result.sources.find(source => source.number === n);
+        return s ? `[${n}] ${s.title}` : `[${n}] — такого фрагмента не было`;
+      }).join('\n');
+    }
+
+    function metaLine(result) {
+      const llm = result.llm;
+      const tokens = llm.promptTokens != null ? `${llm.promptTokens} → ${llm.completionTokens} ток.` : '';
+      const parts = [llm.model, tokens, `${(llm.durationMs / 1000).toFixed(1)} с`];
+      if (result.mode === 'rag') parts.push(`поиск ${result.retrievalMs} мс`);
+      return parts.filter(Boolean).join(' · ');
+    }
+
+
+    function plural(value, one, few, many) {
+      const n = Number(value), mod10 = n % 10, mod100 = n % 100;
+      if (mod10 === 1 && mod100 !== 11) return one;
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+      return many;
+    }
+
+    function modeLabel(mode) { return {auto: 'Авто', rag: 'По лекциям', plain: 'Без RAG'}[mode]; }
+    function rewriteLabel(status) { return {rewritten: 'переформулирован', unchanged: 'без изменений', disabled: 'выключено', fallback: 'резервный запрос'}[status]; }
+    function safeUrl(value) { try { const u = new URL(value); return ['http:', 'https:'].includes(u.protocol) ? u.href : null; } catch { return null; } }
+    function newChat() { if (!busy.value) { turns.value = []; question.value = ''; nextTick(() => document.getElementById('question').focus()); } }
+    function openSource(turn, number) {
+      const element = document.getElementById(`source-${turn}-${number}`);
+      if (element) { element.open = true; element.scrollIntoView({behavior: 'smooth', block: 'center'}); }
+    }
+    async function browseChunks(offset = 0) {
+      const dialog = document.getElementById('chunk-dialog');
+      if (!dialog.open) dialog.showModal();
+      chunkLoading.value = true; chunkError.value = '';
+      try {
+        const response = await fetch(`/api/knowledge/chunks?offset=${offset}&limit=20`);
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.message || `HTTP ${response.status}`);
+        chunks.value = body; chunkOffset.value = offset;
+      } catch (e) { chunkError.value = e.message; }
+      finally { chunkLoading.value = false; }
+    }
+    async function rebuild() {
+      rebuilding.value = true; indexError.value = '';
+      try {
+        const response = await fetch('/api/knowledge/rebuild', {method: 'POST'});
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.message || `HTTP ${response.status}`);
+        await loadKnowledge();
+      } catch (e) { indexError.value = e.message; }
+      finally { rebuilding.value = false; }
+    }
+    onMounted(loadKnowledge);
+
+    return { documentClose: () => document.getElementById('chunk-dialog').close(), question, mode, rerank, rewrite, rewriteLabel, examples, rebuilding, indexError, chunks, chunkOffset, chunkLoading, chunkError, browseChunks, rebuild, newChat, modeLabel, safeUrl, openSource, busy, turns, knowledge, knowledgeLoaded, ask, splitCitations, citeTitle, metaLine, plural };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
