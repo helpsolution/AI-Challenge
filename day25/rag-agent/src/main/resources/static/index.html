@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Мини-чат с памятью — день 25</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  body { background: #fff; }
+  .nav { position: sticky; top: 0; z-index: 3; background: #fff; min-height: 68px; }
+
+  .sidebar { position: fixed; left: 0; top: 68px; bottom: 0; width: 260px; padding: 24px 18px; background: #f6f7fb;
+             border-right: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+  .sidebar-label { font-size: 10px; letter-spacing: 1.6px; color: var(--color-text-muted); }
+  .sidebar-section { margin-top: 12px; font-size: 12px; color: var(--color-text-muted); }
+  .sidebar-title { font-size: 15px; font-weight: 600; }
+  .sidebar p { margin: 0; line-height: 1.6; }
+  .sidebar-facts { font-size: 12px; color: var(--color-text-secondary); }
+  .sidebar-bottom { margin-top: auto; font-size: 11px; line-height: 1.9; color: var(--color-text-muted); }
+
+  .dialogs { display: flex; flex-direction: column; gap: 4px; max-height: 42vh; overflow-y: auto; margin: 0 -6px; }
+  .dialog { display: flex; align-items: flex-start; gap: 6px; padding: 8px 6px 8px 10px; border-radius: var(--radius-md); cursor: pointer;
+            border: 1px solid transparent; background: transparent; text-align: left; font: inherit; color: inherit; width: 100%; }
+  .dialog:hover { background: var(--color-elevated); }
+  .dialog[aria-current="true"] { background: #fff; border-color: var(--color-border); }
+  .dialog-text { flex: 1; min-width: 0; }
+  .dialog-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dialog-goal { font-size: 11px; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+  .dialog-delete { border: 0; background: transparent; color: var(--color-text-muted); cursor: pointer; padding: 0 4px; font-size: 14px; line-height: 1.4; border-radius: 6px; }
+  .dialog-delete:hover { color: var(--color-danger); background: var(--color-danger-soft); }
+  .dialogs-empty { font-size: 12px; color: var(--color-text-muted); }
+
+  .memory { position: fixed; right: 0; top: 68px; bottom: 0; width: 320px; padding: 24px 20px; background: #f6f7fb;
+            border-left: 1px solid var(--color-border); overflow-y: auto; }
+  .memory summary { list-style: none; cursor: default; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .memory summary::-webkit-details-marker { display: none; }
+  .memory-title { font-size: 15px; font-weight: 600; }
+  .memory-block { margin-top: 18px; }
+  .memory-block h3 { margin: 0 0 6px; font-size: 11px; font-weight: 500; letter-spacing: 1.2px; text-transform: uppercase; color: var(--color-text-secondary); }
+  .memory-goal { font-size: 14px; line-height: 1.55; padding: 10px 12px; background: #fff; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+  .memory-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .memory-list li { font-size: 13px; line-height: 1.5; padding: 7px 10px; background: #fff; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+  .memory-empty { font-size: 13px; color: var(--color-text-muted); }
+  .memory .is-new { border-color: var(--color-success); }
+  .new-tag { margin-left: 6px; font-size: 10px; letter-spacing: .6px; text-transform: uppercase; color: var(--color-success); font-weight: 600; }
+  .memory-note { margin-top: 22px; font-size: 12px; line-height: 1.6; color: var(--color-text-muted); }
+
+  .page { margin-left: 260px; margin-right: 320px; padding: 28px max(24px, calc((100vw - 580px - 820px) / 2)) 0; }
+  .feed { padding-bottom: var(--space-6); }
+  .question { align-self: flex-end; max-width: 85%; padding: var(--space-3) var(--space-4); background: #f1f3f8;
+              border-radius: 20px 20px 4px 20px; white-space: pre-wrap; }
+  .assistant-answer { border: 0; box-shadow: none; padding-inline: 0; background: transparent; }
+  .answer-text { white-space: pre-wrap; color: var(--color-text-primary); line-height: 1.6; }
+  .meta { color: var(--color-text-muted); }
+
+  .changes summary { cursor: pointer; font-size: 12px; color: var(--color-success); }
+  .changes ul { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+  .change-removed { color: var(--color-text-muted); text-decoration: line-through; }
+  .changes-none { font-size: 12px; color: var(--color-text-muted); }
+
+  .sources { border-top: 1px solid var(--color-border); padding-top: var(--space-4); }
+  .source { border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+  .source summary { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); cursor: pointer; list-style: none; }
+  .source summary::-webkit-details-marker { display: none; }
+  .source[open] summary { border-bottom: 1px solid var(--color-border); }
+  .source-number { font-family: var(--font-mono); font-weight: 600; color: var(--color-info); min-width: 2.2em; }
+  .source-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .source-title small { display: block; font-size: 11px; color: var(--color-text-muted); margin-top: 3px; white-space: normal; }
+  .source-body { padding: var(--space-3); white-space: pre-wrap; color: var(--color-text-secondary); }
+  .source-original { display: block; margin: 0 16px 16px; color: var(--color-primary); font-size: 12px; }
+  .citation-link { display: inline; color: var(--color-primary); font: inherit; border: 0; padding: 0 2px; background: var(--color-primary-soft); border-radius: 4px; cursor: pointer; }
+
+  .prompt summary { cursor: pointer; color: var(--color-text-secondary); }
+  .prompt-message { border-left: 2px solid var(--color-border-strong); padding-left: var(--space-3); }
+  .prompt-message pre { margin: var(--space-1) 0 0; white-space: pre-wrap; font-family: var(--font-mono); font-size: 0.8125rem; color: var(--color-text-secondary); }
+  .trace-link { color: var(--color-primary); text-decoration: none; }
+  .trace-link:hover { text-decoration: underline; }
+  .warning, .index-error { color: var(--color-warning); font-size: 12px; }
+
+  .composer { position: sticky; bottom: 0; padding: var(--space-4) 0 var(--space-6); background: linear-gradient(transparent, #fff 24px); }
+  .composer .card { padding: var(--space-4); gap: var(--space-3); border-radius: 20px; box-shadow: 0 4px 24px rgba(20,30,70,.05); }
+  .composer .textarea { border: 0; padding: 8px 0; min-height: 64px; box-shadow: none; resize: vertical; }
+  .composer .row-between { flex-wrap: wrap; gap: var(--space-3); }
+  .composer .field-label { font-size: 12px; color: var(--color-text-secondary); }
+
+  .welcome { min-height: 50vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 30px 0; }
+  .welcome-mark { width: 46px; height: 46px; display: grid; place-items: center; color: var(--color-primary); background: var(--color-primary-soft); border-radius: 14px; font-size: 24px; font-weight: 600; }
+  .welcome h1 { font-size: clamp(24px, 3vw, 32px); margin: 24px 0 14px; font-weight: 600; letter-spacing: -.8px; }
+  .welcome p { font-size: 15px; line-height: 1.8; color: var(--color-text-secondary); margin: 0 0 32px; max-width: 560px; }
+  .suggestions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; max-width: 600px; }
+  .suggestion { background: #fff; padding: 18px; text-align: left; border: 1px solid var(--color-border); border-radius: 12px; font: inherit; font-size: 13px; cursor: pointer; display: flex; gap: 20px; justify-content: space-between; }
+  .suggestion:hover { background: #f6f7fb; border-color: var(--color-primary); }
+  .suggestion span { color: var(--color-text-muted); }
+
+  .chunk-dialog { width: min(850px, 95vw); max-height: 85vh; padding: 28px; border: 1px solid var(--color-border); border-radius: 18px; color: var(--color-text-primary); }
+  .chunk-dialog::backdrop { background: rgba(20, 25, 45, .35); }
+  .chunk-dialog h2 { font-size: 20px; margin: 0; }
+  .browse-source { margin-top: 12px; padding: 4px; }
+  .chunk-paging { margin-top: 24px; }
+
+  /* Уже 1280px панель памяти встаёт над лентой и сворачивается. */
+  @media (max-width: 1279px) {
+    .page { margin-right: 0; padding: 24px 24px 0; }
+    .memory { position: static; width: auto; padding: 14px 16px; margin-bottom: 20px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); }
+    .memory summary { cursor: pointer; }
+    .memory summary::after { content: "▾"; color: var(--color-text-muted); }
+    .memory:not([open]) summary::after { content: "▸"; }
+    .memory-block { margin-top: 12px; }
+  }
+  @media (max-width: 900px) { .sidebar { width: 220px; padding: 20px 14px; } .page { margin-left: 220px; padding: 20px 16px 0; } .nav > .t-mono-sm { display: none; } }
+  @media (max-width: 640px) {
+    .sidebar { position: static; width: auto; border-right: 0; border-bottom: 1px solid var(--color-border); padding: 12px 16px; gap: 8px; overflow: visible; }
+    .sidebar-section, .sidebar-title, .sidebar p:not(.index-error), .sidebar-facts, .sidebar-bottom, .knowledge-actions { display: none; }
+    .dialogs { max-height: 132px; }
+    .page { margin: 0; padding: 16px 16px 0; }
+    .question { max-width: 100%; }
+    .source summary { flex-wrap: wrap; row-gap: 6px; }
+    .source-title { flex-basis: calc(100% - 3.5em); white-space: normal; }
+    .welcome { min-height: 40vh; }
+    .suggestions { grid-template-columns: 1fr; }
+    .desktop-only { display: none; }
+    .nav-brand .t-muted { display: none; }
+    .nav > .chip { display: none; }
+    .chunk-dialog { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="nav">
+    <div class="nav-brand">
+      <span class="nav-mark">R</span>
+      <span>Мини-чат</span>
+      <span class="t-body-sm t-muted">день 25</span>
+    </div>
+    <nav class="tabs" aria-label="Разделы">
+      <a class="tab" href="/" aria-selected="true">Чат</a>
+      <a class="tab" href="/inside.html">Внутри агента</a>
+    </nav>
+    <div class="nav-spacer"></div>
+    <template v-if="knowledge.chunks">
+      <span class="chip" data-tone="info">
+        {{ knowledge.documents }} {{ plural(knowledge.documents, 'документ', 'документа', 'документов') }} ·
+        {{ knowledge.chunks }} {{ plural(knowledge.chunks, 'чанк', 'чанка', 'чанков') }}
+      </span>
+      <span class="t-mono-sm t-muted">{{ knowledge.model }} · BGE</span>
+    </template>
+    <span v-else-if="knowledgeLoaded" class="chip" data-tone="warning">База знаний не собрана</span>
+  </header>
+
+  <aside class="sidebar">
+    <button class="btn btn-primary" @click="newChat" :disabled="busy">＋ Новый диалог</button>
+    <div class="sidebar-label">ДИАЛОГИ</div>
+    <div class="dialogs">
+      <div v-if="!conversations.length" class="dialogs-empty">Пока пусто: первый вопрос создаст диалог.</div>
+      <div v-for="c in conversations" :key="c.id" class="dialog" role="button" tabindex="0"
+           :aria-current="c.id === currentId ? 'true' : 'false'" @click="openConversation(c.id)" @keydown.enter="openConversation(c.id)">
+        <div class="dialog-text">
+          <div class="dialog-title" :title="c.title">{{ c.title }}</div>
+          <div class="dialog-goal" :title="c.goal || ''">{{ c.goal ? '🎯 ' + c.goal : c.turns + ' ' + plural(c.turns, 'обмен', 'обмена', 'обменов') }}</div>
+        </div>
+        <button class="dialog-delete" type="button" :title="'Удалить диалог'" :aria-label="'Удалить диалог ' + c.title"
+                :disabled="busy" @click.stop="removeConversation(c)">×</button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">База знаний</div>
+    <div class="sidebar-title">Локальный корпус</div>
+    <div class="sidebar-facts">{{ knowledge.documents || '—' }} документов · {{ knowledge.chunks || '—' }} фрагментов</div>
+    <button class="btn btn-secondary knowledge-actions" @click="browseChunks()">Посмотреть фрагменты</button>
+    <button class="btn btn-tertiary knowledge-actions" @click="rebuild" :disabled="rebuilding || busy">{{ rebuilding ? 'Собираю индекс…' : 'Пересобрать индекс' }}</button>
+    <p v-if="indexError" class="index-error" role="alert">{{ indexError }}</p>
+    <div class="sidebar-bottom">День 25 · История и память задачи<br>Ollama + BGE + DeepSeek + SQLite</div>
+  </aside>
+
+  <main class="page">
+    <details class="memory" :open="memoryOpen" @toggle="memoryOpen = $event.target.open" aria-label="Память задачи">
+      <summary @click="wide && $event.preventDefault()">
+        <span class="memory-title">Память задачи</span>
+        <span v-if="!settings.memoryEnabled" class="chip" data-tone="warning">Выключена</span>
+        <span v-else-if="memoryUpdatedAt" class="chip" data-tone="success">обновлена · ход {{ memoryUpdatedAt }}</span>
+        <span v-else class="chip" data-tone="neutral">пусто</span>
+      </summary>
+      <template v-if="settings.memoryEnabled">
+        <div class="memory-block">
+          <h3>🎯 Цель</h3>
+          <div v-if="memory.goal" class="memory-goal" :class="{ 'is-new': isNew('goal', memory.goal) }">{{ memory.goal }}<span v-if="isNew('goal', memory.goal)" class="new-tag">новое</span></div>
+          <div v-else class="memory-empty">Ещё не названа</div>
+        </div>
+        <div v-for="block in memoryBlocks" :key="block.field" class="memory-block">
+          <h3>{{ block.icon }} {{ block.title }}</h3>
+          <ul v-if="memory[block.field].length" class="memory-list">
+            <li v-for="item in memory[block.field]" :key="item" :class="{ 'is-new': isNew(block.field, item) }">{{ item }}<span v-if="isNew(block.field, item)" class="new-tag">новое</span></li>
+          </ul>
+          <div v-else class="memory-empty">—</div>
+        </div>
+      </template>
+      <p v-else class="memory-note">Память задачи выключена в конфигурации (TASK_MEMORY_ENABLED=false). Модель видит только последние {{ settings.historyTurns }} {{ plural(settings.historyTurns, 'обмен', 'обмена', 'обменов') }}.</p>
+      <p v-if="settings.memoryEnabled" class="memory-note">
+        Память обновляется перед поиском отдельным вызовом DeepSeek и только по словам пользователя.
+        В промпт ответа идут она и последние {{ settings.historyTurns }} {{ plural(settings.historyTurns, 'обмен', 'обмена', 'обменов') }} — всё, что раньше, держит только память.
+      </p>
+    </details>
+
+    <section class="feed stack stack-lg" aria-live="polite">
+      <div v-if="!turns.length && !loadingConversation" class="welcome">
+        <div class="welcome-mark">R</div>
+        <h1>Чат, который помнит задачу</h1>
+        <p>Назовите цель и условия — я зафиксирую их в памяти задачи. На каждый вопрос ищу фрагменты в базе знаний<br class="desktop-only"> и показываю, на что опирается ответ.</p>
+        <div class="suggestions">
+          <button v-for="example in examples" :key="example" @click="question = example" class="suggestion">{{ example }} <span>↗</span></button>
+        </div>
+      </div>
+      <p v-if="conversationError" class="warning" role="alert">{{ conversationError }}</p>
+
+      <div v-for="turn in turns" :key="turn.key" class="stack stack-sm">
+        <div class="question">{{ turn.question }}</div>
+
+        <article v-if="turn.pending" class="card">
+          <div class="row"><span class="chip" data-tone="info">Ход {{ turn.number }}</span><span class="t-body-sm t-muted">Обновляю память, ищу фрагменты и готовлю ответ…</span></div>
+        </article>
+
+        <article v-else-if="turn.error" class="card card-accent" data-accent="danger">
+          <div class="row"><span class="chip" data-tone="danger">Ошибка</span><span class="t-body-sm t-muted">обмен не сохранён</span></div>
+          <div class="answer-text">{{ turn.error }}</div>
+        </article>
+
+        <article v-else class="card assistant-answer">
+          <div class="row-between" style="flex-wrap: wrap">
+            <span class="chip" data-tone="info">Ход {{ turn.result.number }}</span>
+            <span class="t-mono-sm meta">{{ metaLine(turn.result) }}</span>
+          </div>
+
+          <details v-if="turn.result.memoryUpdate.status === 'updated'" class="changes">
+            <summary>🧠 Память: {{ changesSummary(turn.result.memoryUpdate.changes) }}</summary>
+            <ul>
+              <li v-for="(c, i) in turn.result.memoryUpdate.changes" :key="i" :class="{ 'change-removed': c.kind === 'removed' }">
+                {{ changeLabel(c) }}: {{ c.text }}<template v-if="c.previous"> (было: {{ c.previous }})</template>
+              </li>
+            </ul>
+          </details>
+          <div v-else-if="turn.result.memoryUpdate.status === 'unchanged'" class="changes-none">🧠 Память без изменений</div>
+          <div v-for="warning in turn.result.warnings" :key="warning" class="warning t-body-sm">{{ warning }}</div>
+
+          <div class="answer-text">
+            <template v-for="(part, i) in splitCitations(turn.result.answer)" :key="i">
+              <button v-if="part.cite" class="citation-link" :title="citeTitle(turn.result, part.numbers)" @click="openSource(turn.key, part.numbers[0])">{{ part.text }}</button>
+              <template v-else>{{ part.text }}</template>
+            </template>
+          </div>
+
+          <div class="sources stack stack-sm">
+            <div class="row-between" style="flex-wrap: wrap">
+              <div class="t-label-sm t-secondary">Источники</div>
+              <span class="t-mono-sm t-muted">BGE: {{ turn.result.reranking.candidateK }} → {{ turn.result.reranking.topK }} · {{ turn.result.reranking.durationMs }} мс</span>
+            </div>
+            <details v-for="s in turn.result.sources" :key="s.chunkId" :id="'source-' + turn.key + '-' + s.number" class="source">
+              <summary>
+                <span class="source-number">[{{ s.number }}]</span>
+                <span class="source-title t-body-sm">{{ s.title }}<small>{{ s.section }}</small></span><span v-if="s.used" class="chip" data-tone="info">В ответе</span>
+                <span class="t-mono-sm t-muted" :title="'Косинус: ' + s.score.toFixed(3)">rerank {{ s.rerankScore.toFixed(3) }}</span>
+              </summary>
+              <div class="source-body t-body-sm">{{ s.text }}</div>
+              <div class="t-mono-sm t-muted" style="padding: 0 var(--space-3) var(--space-3)">Косинус {{ s.score.toFixed(3) }} · Cross-encoder {{ s.rerankScore.toFixed(3) }} — оценка, не вероятность</div>
+              <a v-if="safeUrl(s.url)" :href="safeUrl(s.url)" target="_blank" rel="noopener noreferrer" class="source-original">Открыть оригинал ↗</a>
+              <div class="t-mono-sm t-muted" style="padding: 0 var(--space-3) var(--space-3)">{{ s.chunkId }}</div>
+            </details>
+          </div>
+
+          <a class="trace-link t-body-sm" :href="'/inside.html?trace=' + turn.result.traceId">Как агент пришёл к этому ответу — по шагам →</a>
+
+          <details class="prompt">
+            <summary class="t-body-sm">Промпт, отправленный модели</summary>
+            <div class="stack stack-sm" style="margin-top: var(--space-3)">
+              <div v-for="(m, i) in turn.result.prompt" :key="i" class="prompt-message">
+                <div class="t-label-sm t-muted">{{ m.role }}</div>
+                <pre>{{ m.content }}</pre>
+              </div>
+            </div>
+          </details>
+        </article>
+      </div>
+    </section>
+
+    <form class="composer" @submit.prevent="ask">
+      <div class="card">
+        <label class="field-label" for="question">Сообщение</label>
+        <textarea id="question" class="textarea" v-model="question" rows="2"
+                  placeholder="Enter — отправить, Shift+Enter — новая строка"
+                  @keydown.enter.exact.prevent="ask"></textarea>
+        <div class="row-between">
+          <span class="t-body-sm t-muted">Поиск по реплике · {{ settings.memoryEnabled ? 'память включена' : 'без памяти' }} · в промпте {{ settings.historyTurns }} {{ plural(settings.historyTurns, 'последний обмен', 'последних обмена', 'последних обменов') }}</span>
+          <button class="btn btn-primary" type="submit" :disabled="busy || !question.trim()">
+            <svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                 stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>
+            </svg>
+            Отправить
+          </button>
+        </div>
+      </div>
+    </form>
+  </main>
+
+  <dialog id="chunk-dialog" class="chunk-dialog">
+    <div class="row-between"><h2>Фрагменты базы знаний</h2><button class="btn btn-tertiary" @click="documentClose">Закрыть ✕</button></div>
+    <p class="t-body-sm t-secondary">Структурная нарезка: {{ knowledge.target_chars }} символов — цель, {{ knowledge.max_chars }} — предел блока.</p>
+    <p v-if="chunkLoading">Загружаю…</p><p v-if="chunkError" role="alert">{{ chunkError }}</p>
+    <details v-for="chunk in chunks" :key="chunk.chunkId" class="source browse-source">
+      <summary>{{ chunk.title }} · {{ chunk.section || 'Введение' }}</summary>
+      <div class="source-body t-body-sm">{{ chunk.content }}</div>
+      <div class="t-mono-sm t-muted">{{ chunk.chunkId }} · {{ chunk.content.length }} символов</div>
+    </details>
+    <div class="row-between chunk-paging"><button class="btn btn-secondary" @click="browseChunks(chunkOffset - 20)" :disabled="chunkOffset === 0 || chunkLoading">← Назад</button><span>{{ chunkOffset + 1 }}–{{ chunkOffset + chunks.length }}</span><button class="btn btn-secondary" @click="browseChunks(chunkOffset + 20)" :disabled="chunks.length < 20 || chunkLoading || chunkOffset + chunks.length >= Number(knowledge.chunks)">Дальше →</button></div>
+  </dialog>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, ref, computed, nextTick, onMounted } = Vue;
+
+const EMPTY_MEMORY = { goal: null, clarified: [], constraints: [], terms: [] };
+const FIELDS = {
+  goal: { one: 'цель', title: 'Цель' },
+  clarified: { title: 'Уточнено', icon: '📌', forms: ['уточнение', 'уточнения', 'уточнений'] },
+  constraints: { title: 'Ограничения', icon: '⛔', forms: ['ограничение', 'ограничения', 'ограничений'] },
+  terms: { title: 'Термины', icon: '📖', forms: ['термин', 'термина', 'терминов'] },
+};
+
+createApp({
+  setup() {
+    const question = ref('');
+    const busy = ref(false);
+    const conversations = ref([]);
+    const currentId = ref(null);
+    const turns = ref([]);
+    const memory = ref({ ...EMPTY_MEMORY });
+    const lastChanges = ref([]);
+    const memoryUpdatedAt = ref(null);
+    const settings = ref({ memoryEnabled: true, historyTurns: 3 });
+    const loadingConversation = ref(false);
+    const conversationError = ref('');
+    const wide = ref(window.matchMedia('(min-width: 1280px)').matches);
+    const memoryOpen = ref(window.matchMedia('(min-width: 641px)').matches);
+    const knowledge = ref({});
+    const knowledgeLoaded = ref(false);
+    const rebuilding = ref(false);
+    const indexError = ref('');
+    const chunks = ref([]);
+    const chunkOffset = ref(0);
+    const chunkLoading = ref(false);
+    const chunkError = ref('');
+    const examples = [
+      'Хочу составить нефункциональные требования для своего сервиса. С чего начать?',
+      'Готовлю ADR для команды: какие разделы в нём обязательны?',
+      'Чем доступность отличается от надёжности?',
+      'Объясни уровни модели C4',
+    ];
+    const memoryBlocks = ['clarified', 'constraints', 'terms'].map(field => ({ field, ...FIELDS[field] }));
+    window.matchMedia('(min-width: 1280px)').addEventListener('change', e => { wide.value = e.matches; if (e.matches) memoryOpen.value = true; });
+
+    async function getJson(url, options) {
+      const response = await fetch(url, options);
+      if (response.status === 204) return null;
+      const body = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
+      if (!response.ok) throw new Error(body.message || `HTTP ${response.status}`);
+      return body;
+    }
+
+    async function loadKnowledge() {
+      try {
+        const status = await getJson('/api/knowledge/status');
+        knowledge.value = status.meta || {};
+        indexError.value = status.error || '';
+      } catch (e) { indexError.value = e.message; }
+      finally { knowledgeLoaded.value = true; }
+    }
+
+    async function loadConversations() {
+      try { conversations.value = await getJson('/api/conversations'); }
+      catch (e) { conversationError.value = e.message; }
+    }
+
+    function applyMemory(state, update, number) {
+      memory.value = state;
+      lastChanges.value = update?.changes || [];
+      if (update?.status === 'updated') memoryUpdatedAt.value = number;
+    }
+
+    async function openConversation(id) {
+      if (busy.value) return;
+      loadingConversation.value = true; conversationError.value = '';
+      try {
+        const c = await getJson(`/api/conversations/${id}`);
+        currentId.value = c.id;
+        turns.value = c.turns.map(t => ({ key: `${c.id}-${t.number}`, question: t.question, number: t.number, result: t }));
+        memory.value = c.memory;
+        const last = c.turns[c.turns.length - 1];
+        lastChanges.value = last?.memoryUpdate.changes || [];
+        memoryUpdatedAt.value = [...c.turns].reverse().find(t => t.memoryUpdate.status === 'updated')?.number ?? null;
+        history.replaceState(null, '', `/?c=${c.id}`);
+        scrollDown('auto');
+      } catch (e) {
+        conversationError.value = e.message;
+        history.replaceState(null, '', '/');
+      } finally { loadingConversation.value = false; }
+    }
+
+    function newChat() {
+      if (busy.value) return;
+      currentId.value = null; turns.value = []; question.value = ''; conversationError.value = '';
+      memory.value = { ...EMPTY_MEMORY }; lastChanges.value = []; memoryUpdatedAt.value = null;
+      history.replaceState(null, '', '/');
+      nextTick(() => document.getElementById('question').focus());
+    }
+
+    async function removeConversation(c) {
+      if (!confirm(`Удалить диалог «${c.title}» вместе с памятью задачи?`)) return;
+      try {
+        await getJson(`/api/conversations/${c.id}`, { method: 'DELETE' });
+        if (c.id === currentId.value) newChat();
+      } catch (e) { conversationError.value = e.message; }
+      await loadConversations();
+    }
+
+    async function ask() {
+      const text = question.value.trim();
+      if (!text || busy.value) return;
+      busy.value = true; conversationError.value = '';
+      const saved = turns.value.filter(t => t.result).length;
+      turns.value.push({ key: `pending-${Date.now()}`, question: text, number: saved + 1, pending: true });
+      const current = turns.value[turns.value.length - 1];
+      question.value = '';
+      scrollDown();
+      try {
+        if (!currentId.value) {
+          const created = await getJson('/api/conversations', { method: 'POST' });
+          currentId.value = created.id;
+          history.replaceState(null, '', `/?c=${created.id}`);
+        }
+        const result = await getJson(`/api/conversations/${currentId.value}/messages`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text }),
+        });
+        current.result = result;
+        current.key = `${currentId.value}-${result.number}`;
+        applyMemory(result.memory, result.memoryUpdate, result.number);
+      } catch (e) {
+        current.error = e instanceof TypeError ? `Сервис не ответил: ${e.message}` : e.message;
+      } finally {
+        current.pending = false;
+        busy.value = false;
+        loadConversations();
+        scrollDown();
+      }
+    }
+
+    function isNew(field, text) {
+      return lastChanges.value.some(c => c.field === field && c.kind !== 'removed' && c.text === text);
+    }
+
+    function changeLabel(c) {
+      if (c.field === 'goal') return { added: '🎯 Цель записана', changed: '🎯 Цель изменена', removed: '🎯 Цель снята' }[c.kind];
+      const f = FIELDS[c.field];
+      return (c.kind === 'added' ? '+ ' : '− ') + f.forms[0][0].toUpperCase() + f.forms[0].slice(1);
+    }
+
+    function changesSummary(changes) {
+      const parts = [];
+      const goal = changes.find(c => c.field === 'goal');
+      if (goal) parts.push({ added: 'цель записана', changed: 'цель изменена', removed: 'цель снята' }[goal.kind]);
+      for (const field of ['clarified', 'constraints', 'terms']) {
+        for (const kind of ['added', 'removed']) {
+          const n = changes.filter(c => c.field === field && c.kind === kind).length;
+          if (n) parts.push(`${kind === 'added' ? '+' : '−'}${n} ${plural(n, ...FIELDS[field].forms)}`);
+        }
+      }
+      return parts.join(' · ');
+    }
+
+    function scrollDown(behavior = 'smooth') {
+      nextTick(() => window.scrollTo({ top: document.body.scrollHeight, behavior }));
+    }
+
+    function splitCitations(text) {
+      const parts = [];
+      const pattern = /\[(\d+(?:\s*[,;]\s*\d+)*)\]/g;
+      let last = 0;
+      for (const match of text.matchAll(pattern)) {
+        if (match.index > last) parts.push({ text: text.slice(last, match.index) });
+        parts.push({ text: match[0], cite: true, numbers: match[1].split(/[,;]/).map(n => Number(n.trim())) });
+        last = match.index + match[0].length;
+      }
+      if (last < text.length) parts.push({ text: text.slice(last) });
+      return parts;
+    }
+
+    function citeTitle(result, numbers) {
+      return numbers.map(n => {
+        const s = result.sources.find(source => source.number === n);
+        return s ? `[${n}] ${s.title}` : `[${n}] — такого фрагмента не было`;
+      }).join('\n');
+    }
+
+    function metaLine(result) {
+      const llm = result.llm;
+      const tokens = llm.promptTokens != null ? `${llm.promptTokens} → ${llm.completionTokens} ток.` : '';
+      const memoryMs = result.memoryUpdate.enabled ? `память ${(result.memoryUpdate.durationMs / 1000).toFixed(1)} с` : '';
+      return [llm.model, tokens, `${(llm.durationMs / 1000).toFixed(1)} с`, `поиск ${result.retrievalMs} мс`, memoryMs].filter(Boolean).join(' · ');
+    }
+
+    function plural(value, one, few, many) {
+      const n = Number(value), mod10 = n % 10, mod100 = n % 100;
+      if (mod10 === 1 && mod100 !== 11) return one;
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+      return many;
+    }
+
+    function safeUrl(value) { try { const u = new URL(value); return ['http:', 'https:'].includes(u.protocol) ? u.href : null; } catch { return null; } }
+    function openSource(turn, number) {
+      const element = document.getElementById(`source-${turn}-${number}`);
+      if (element) { element.open = true; element.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    }
+    async function browseChunks(offset = 0) {
+      const dialog = document.getElementById('chunk-dialog');
+      if (!dialog.open) dialog.showModal();
+      chunkLoading.value = true; chunkError.value = '';
+      try { chunks.value = await getJson(`/api/knowledge/chunks?offset=${offset}&limit=20`); chunkOffset.value = offset; }
+      catch (e) { chunkError.value = e.message; }
+      finally { chunkLoading.value = false; }
+    }
+    async function rebuild() {
+      rebuilding.value = true; indexError.value = '';
+      try { await getJson('/api/knowledge/rebuild', { method: 'POST' }); await loadKnowledge(); }
+      catch (e) { indexError.value = e.message; }
+      finally { rebuilding.value = false; }
+    }
+
+    onMounted(async () => {
+      loadKnowledge();
+      getJson('/api/settings').then(s => { settings.value = s; }).catch(e => { conversationError.value = e.message; });
+      await loadConversations();
+      const wanted = new URLSearchParams(location.search).get('c');
+      if (wanted) await openConversation(wanted);
+    });
+
+    return { documentClose: () => document.getElementById('chunk-dialog').close(), question, busy, conversations, currentId, turns,
+      memory, memoryBlocks, memoryUpdatedAt, settings, loadingConversation, conversationError, wide, memoryOpen, knowledge, knowledgeLoaded,
+      rebuilding, indexError, chunks, chunkOffset, chunkLoading, chunkError, examples, openConversation, newChat, removeConversation, ask,
+      isNew, changeLabel, changesSummary, splitCitations, citeTitle, metaLine, plural, safeUrl, openSource, browseChunks, rebuild };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
