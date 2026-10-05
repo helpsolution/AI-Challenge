@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Локальная LLM — день 26</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  body { background: #fff; }
+  .nav { position: sticky; top: 0; z-index: 3; background: #fff; min-height: 68px; }
+
+  .sidebar { position: fixed; left: 0; top: 68px; bottom: 0; width: 280px; padding: 24px 18px; background: #f6f7fb;
+             border-right: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+  .sidebar-label { margin-top: 10px; font-size: 10px; letter-spacing: 1.6px; color: var(--color-text-muted); }
+  .sidebar-bottom { margin-top: auto; font-size: 11px; line-height: 1.9; color: var(--color-text-muted); }
+  .status-error { margin: 0; color: var(--color-danger); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+
+  .model-facts { margin: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+  .model-facts > div { display: flex; justify-content: space-between; gap: 12px; }
+  .model-facts dt { color: var(--color-text-muted); }
+  .model-facts dd { margin: 0; font-family: var(--font-mono); font-size: 12px; text-align: right; overflow-wrap: anywhere; }
+
+  .preset { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; padding: 10px 12px; text-align: left;
+            background: #fff; border: 1px solid var(--color-border); border-radius: var(--radius-md); font: inherit; font-size: 13px;
+            line-height: 1.45; color: var(--color-text-primary); cursor: pointer; }
+  .preset:hover { border-color: var(--color-primary); }
+  .preset:disabled { cursor: default; opacity: .6; }
+
+  .page { margin-left: 280px; padding: 28px max(24px, calc((100vw - 280px - 860px) / 2)) 0; }
+  .feed { padding-bottom: var(--space-6); }
+  .question { align-self: flex-end; max-width: 85%; padding: var(--space-3) var(--space-4); background: #f1f3f8;
+              border-radius: 20px 20px 4px 20px; white-space: pre-wrap; }
+  .assistant-answer { border: 0; box-shadow: none; padding-inline: 0; background: transparent; }
+  .answer-text { white-space: pre-wrap; color: var(--color-text-primary); line-height: 1.6; }
+  .meta { color: var(--color-text-muted); }
+
+  .facts { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+  .fact { display: flex; flex-direction: column; gap: 2px; }
+  .fact b { font-family: var(--font-mono); font-weight: 500; font-size: 0.9375rem; color: var(--color-text-primary); }
+  .fact span { font-size: 0.75rem; color: var(--color-text-muted); }
+
+  details.fold { border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+  details.fold > summary { cursor: pointer; padding: var(--space-2) var(--space-3); color: var(--color-text-secondary);
+                           font-size: 0.8125rem; list-style-position: inside; }
+  details.fold[open] > summary { border-bottom: 1px solid var(--color-border); }
+  details.fold > .fold-body { padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-4); }
+  .io { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+  .io > div { min-width: 0; }
+  .http-line { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--color-text-primary); overflow-wrap: anywhere; }
+  .mono-box { margin: 0; padding: var(--space-3); background: var(--color-elevated); border: 1px solid var(--color-border);
+              border-radius: var(--radius-md); font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.6;
+              white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-text-secondary); max-height: 420px; overflow-y: auto; }
+  .note { margin: 0; font-size: 12px; line-height: 1.6; color: var(--color-text-muted); }
+
+  .composer { position: sticky; bottom: 0; padding: var(--space-4) 0 var(--space-6); background: linear-gradient(transparent, #fff 24px); }
+  .composer .card { padding: var(--space-4); gap: var(--space-3); border-radius: 20px; box-shadow: 0 4px 24px rgba(20,30,70,.05); }
+  .composer .textarea { border: 0; padding: 8px 0; min-height: 64px; box-shadow: none; resize: vertical; }
+  .composer .row-between { flex-wrap: wrap; gap: var(--space-3); }
+  .composer .field-label { font-size: 12px; color: var(--color-text-secondary); }
+
+  .welcome { min-height: 50vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 30px 0; }
+  .welcome-mark { width: 46px; height: 46px; display: grid; place-items: center; color: var(--color-primary); background: var(--color-primary-soft); border-radius: 14px; font-size: 24px; font-weight: 600; }
+  .welcome h1 { font-size: clamp(24px, 3vw, 32px); margin: 24px 0 14px; font-weight: 600; letter-spacing: -.8px; }
+  .welcome p { font-size: 15px; line-height: 1.8; color: var(--color-text-secondary); margin: 0 0 32px; max-width: 600px; }
+  .suggestions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 100%; }
+  .suggestions .preset { padding: 16px; height: 100%; }
+
+  @media (max-width: 1100px) { .suggestions { grid-template-columns: 1fr; } }
+  @media (max-width: 900px) { .sidebar { width: 240px; } .page { margin-left: 240px; padding: 20px 16px 0; } .nav > .t-mono-sm { display: none; } }
+  @media (max-width: 760px) { .io { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) {
+    .sidebar { position: static; width: auto; border-right: 0; border-bottom: 1px solid var(--color-border); padding: 12px 16px; gap: 10px; overflow: visible; }
+    .sidebar-presets, .sidebar-bottom { display: none; }
+    .page { margin: 0; padding: 16px 16px 0; }
+    .question { max-width: 100%; }
+    .welcome { min-height: 30vh; }
+    .nav-brand .t-muted { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="nav">
+    <div class="nav-brand">
+      <span class="nav-mark">L</span>
+      <span>Локальная LLM</span>
+      <span class="t-body-sm t-muted">день 26</span>
+    </div>
+    <div class="nav-spacer"></div>
+    <span v-if="statusError" class="chip" data-tone="danger">Ollama не отвечает</span>
+    <template v-else-if="status">
+      <span v-if="!status.installed" class="chip" data-tone="warning">{{ status.model }} не скачана</span>
+      <span v-else-if="status.loaded" class="chip" data-tone="success">● модель в памяти</span>
+      <span v-else class="chip" data-tone="neutral">○ модель выгружена</span>
+      <span class="t-mono-sm t-muted">Ollama {{ status.version }} · {{ host(status.baseUrl) }}</span>
+    </template>
+  </header>
+
+  <aside class="sidebar">
+    <button class="btn btn-primary" @click="newChat" :disabled="busy">＋ Новый диалог</button>
+
+    <div class="sidebar-label">МОДЕЛЬ</div>
+    <p v-if="statusError" class="status-error" role="alert">{{ statusError }}</p>
+    <dl v-else-if="status" class="model-facts">
+      <div><dt>Имя</dt><dd>{{ status.model }}</dd></div>
+      <template v-if="status.installed">
+        <div><dt>Параметры</dt><dd>{{ status.parameterSize }} · {{ status.quantization }}</dd></div>
+        <div><dt>На диске</dt><dd>{{ gb(status.diskBytes) }}</dd></div>
+        <div><dt>Контекст</dt><dd>{{ status.loaded?.context ? num(status.loaded.context) + ' из ' : 'до ' }}{{ num(status.maxContext) }}</dd></div>
+        <div><dt>В памяти</dt><dd>{{ status.loaded ? gb(status.loaded.memoryBytes) + ' · ' + gpuShare(status.loaded) : 'нет' }}</dd></div>
+        <div v-if="status.loaded?.expiresAt"><dt>Выгрузится</dt><dd>{{ clock(status.loaded.expiresAt) }}</dd></div>
+      </template>
+      <div v-else><dt>Скачаны</dt><dd>{{ status.installedModels.join(', ') || '—' }}</dd></div>
+      <div><dt>temperature</dt><dd>{{ status.temperature }}</dd></div>
+    </dl>
+    <button class="btn btn-tertiary btn-sm" @click="loadStatus">Обновить статус</button>
+
+    <div class="sidebar-label sidebar-presets">ЗАПРОСЫ РАЗНОЙ СЛОЖНОСТИ</div>
+    <button v-for="p in presets" :key="p.level" class="preset sidebar-presets" :disabled="busy" @click="usePreset(p)">
+      <span class="chip" :data-tone="p.tone">{{ p.level }}</span>{{ p.title }}
+    </button>
+
+    <div class="sidebar-bottom">День 26 · Локальная LLM<br>Spring Boot → Ollama → {{ status?.model || 'модель' }}<br>Без облака и API-ключей</div>
+  </aside>
+
+  <main class="page">
+    <section class="feed stack stack-lg" aria-live="polite">
+      <div v-if="!turns.length" class="welcome">
+        <div class="welcome-mark">L</div>
+        <h1>Модель работает на этом компьютере</h1>
+        <p>Запросы уходят в Ollama на {{ status ? host(status.baseUrl) : 'localhost:11434' }} — без облака и ключей.
+          Под каждым ответом — скорость генерации и сырой HTTP-обмен: что ушло в модель и что пришло обратно.</p>
+        <div class="suggestions">
+          <button v-for="p in presets" :key="p.level" class="preset" @click="usePreset(p)">
+            <span class="chip" :data-tone="p.tone">{{ p.level }}</span>{{ p.text }}
+          </button>
+        </div>
+      </div>
+
+      <div v-for="turn in turns" :key="turn.key" class="stack stack-sm">
+        <div class="question">{{ turn.question }}</div>
+
+        <article v-if="turn.pending" class="card">
+          <div class="row"><span class="chip" data-tone="info">{{ status?.model || 'модель' }}</span>
+            <span class="t-body-sm t-muted">Генерирую ответ… {{ (elapsedMs / 1000).toFixed(1) }} с</span></div>
+        </article>
+
+        <article v-else-if="turn.error" class="card card-accent" data-accent="danger">
+          <div class="row"><span class="chip" data-tone="danger">Ошибка</span><span class="t-body-sm t-muted">в историю диалога не попадёт</span></div>
+          <div class="answer-text">{{ turn.error }}</div>
+        </article>
+
+        <article v-else class="card assistant-answer">
+          <div class="row-between" style="flex-wrap: wrap">
+            <span class="chip" data-tone="info">{{ turn.result.model }}</span>
+            <span class="t-mono-sm meta">{{ turn.historySize }} {{ plural(turn.historySize, 'сообщение', 'сообщения', 'сообщений') }} в запросе</span>
+          </div>
+
+          <div class="answer-text">{{ turn.result.answer }}</div>
+
+          <div class="facts">
+            <div class="fact"><b>{{ sec(turn.result.exchange.durationMs) }}</b><span>запрос целиком</span></div>
+            <div class="fact"><b>{{ sec(turn.result.metrics.loadMs) }}</b><span>загрузка модели</span></div>
+            <div class="fact"><b>{{ num(turn.result.metrics.promptTokens) }} ток.</b><span>промпт · {{ rate(turn.result.metrics.promptTokensPerSecond) }}</span></div>
+            <div class="fact"><b>{{ num(turn.result.metrics.answerTokens) }} ток.</b><span>ответ · {{ rate(turn.result.metrics.answerTokensPerSecond) }}</span></div>
+            <div class="fact"><b>{{ turn.result.metrics.doneReason ?? '—' }}</b><span>почему остановилась</span></div>
+          </div>
+
+          <details class="fold" :open="turn.open" @toggle="turn.open = $event.target.open">
+            <summary>Что ушло в Ollama и что пришло · {{ turn.result.exchange.method }} {{ path(turn.result.exchange.url) }} → {{ turn.result.exchange.status }}</summary>
+            <div class="fold-body">
+              <div class="io">
+                <div class="stack stack-sm">
+                  <div class="t-label-sm t-secondary">Запрос</div>
+                  <div class="http-line">{{ turn.result.exchange.method }} {{ turn.result.exchange.url }}</div>
+                  <pre class="mono-box">{{ headers(turn.result.exchange.requestHeaders) }}</pre>
+                  <pre class="mono-box">{{ pretty(turn.result.exchange.requestBody) }}</pre>
+                </div>
+                <div class="stack stack-sm">
+                  <div class="t-label-sm t-secondary">Ответ</div>
+                  <div class="http-line">{{ turn.result.exchange.status }} · {{ sec(turn.result.exchange.durationMs) }}</div>
+                  <pre class="mono-box">{{ pretty(turn.result.exchange.responseBody) }}</pre>
+                  <p class="note">Длительности в ответе Ollama — в наносекундах: total_duration {{ num(nanos(turn.result.exchange.responseBody, 'total_duration')) }} = {{ sec(turn.result.metrics.totalMs) }}.</p>
+                </div>
+              </div>
+              <div class="stack stack-sm">
+                <div class="row-between">
+                  <div class="t-label-sm t-secondary">Тот же запрос через curl</div>
+                  <button class="btn btn-tertiary btn-sm" type="button" @click="copyCurl(turn)">{{ turn.copied ? 'Скопировано ✓' : 'Копировать' }}</button>
+                </div>
+                <pre class="mono-box">{{ curl(turn.result.exchange) }}</pre>
+              </div>
+            </div>
+          </details>
+        </article>
+      </div>
+    </section>
+
+    <form class="composer" @submit.prevent="ask">
+      <div class="card">
+        <label class="field-label" for="question">Сообщение</label>
+        <textarea id="question" class="textarea" v-model="question" rows="2"
+                  placeholder="Enter — отправить, Shift+Enter — новая строка"
+                  @keydown.enter.exact.prevent="ask"></textarea>
+        <div class="row-between">
+          <span class="t-body-sm t-muted">Модель ничего не помнит между вызовами: история диалога уходит в каждом запросе целиком</span>
+          <button class="btn btn-primary" type="submit" :disabled="busy || !question.trim()">
+            <svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                 stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>
+            </svg>
+            Отправить
+          </button>
+        </div>
+      </div>
+    </form>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, ref, nextTick, onMounted } = Vue;
+
+const PRESETS = [
+  { level: 'Простой', tone: 'success', title: 'Определение в одно предложение',
+    text: 'Что такое HTTP? Ответь одним предложением.' },
+  { level: 'Средний', tone: 'info', title: 'Функция на Kotlin с примерами',
+    text: 'Напиши на Kotlin функцию isPalindrome(s: String): Boolean, которая игнорирует регистр, пробелы и знаки препинания. Добавь два примера вызова.' },
+  { level: 'Сложный', tone: 'warning', title: 'Задача в несколько шагов',
+    text: 'Из города А в 9:40 выехал поезд со скоростью 80 км/ч. В 10:10 навстречу ему из города Б выехал второй поезд со скоростью 100 км/ч. Расстояние между городами 330 км. Во сколько поезда встретятся? Реши по шагам.' },
+];
+
+createApp({
+  setup() {
+    const question = ref('');
+    const busy = ref(false);
+    const turns = ref([]);
+    const status = ref(null);
+    const statusError = ref('');
+    const elapsedMs = ref(0);
+
+    async function getJson(url, options) {
+      const response = await fetch(url, options);
+      const body = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
+      if (!response.ok) throw new Error(body.message || `HTTP ${response.status}`);
+      return body;
+    }
+
+    async function loadStatus() {
+      try { status.value = await getJson('/api/status'); statusError.value = ''; }
+      catch (e) { statusError.value = e instanceof TypeError ? `Сервис не ответил: ${e.message}` : e.message; }
+    }
+
+    // В модель уходят только завершённые обмены: реплика с ошибкой в историю не попадает.
+    function history() {
+      return turns.value.filter(t => t.result).flatMap(t => [
+        { role: 'user', content: t.question },
+        { role: 'assistant', content: t.result.answer },
+      ]);
+    }
+
+    async function ask() {
+      const text = question.value.trim();
+      if (!text || busy.value) return;
+      const messages = [...history(), { role: 'user', content: text }];
+      busy.value = true;
+      turns.value.push({ key: `turn-${Date.now()}`, question: text, historySize: messages.length, pending: true, open: false, copied: false });
+      const current = turns.value[turns.value.length - 1];
+      question.value = '';
+      scrollDown();
+      const started = performance.now();
+      elapsedMs.value = 0;
+      const timer = setInterval(() => { elapsedMs.value = performance.now() - started; }, 100);
+      try {
+        current.result = await getJson('/api/ask', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages }),
+        });
+      } catch (e) {
+        current.error = e instanceof TypeError ? `Сервис не ответил: ${e.message}` : e.message;
+      } finally {
+        clearInterval(timer);
+        current.pending = false;
+        busy.value = false;
+        loadStatus();
+        scrollDown();
+      }
+    }
+
+    function newChat() {
+      if (busy.value) return;
+      turns.value = []; question.value = '';
+      nextTick(() => document.getElementById('question').focus());
+    }
+
+    function usePreset(preset) {
+      question.value = preset.text;
+      nextTick(() => document.getElementById('question').focus());
+    }
+
+    async function copyCurl(turn) {
+      try {
+        await navigator.clipboard.writeText(curl(turn.result.exchange));
+        turn.copied = true;
+        setTimeout(() => { turn.copied = false; }, 1500);
+      } catch { /* буфер недоступен — команду можно выделить вручную */ }
+    }
+
+    function curl(exchange) {
+      const body = pretty(exchange.requestBody).replaceAll("'", "'\\''");
+      return `curl ${exchange.url} \\\n  -H 'Content-Type: application/json' \\\n  -d '${body}'`;
+    }
+
+    function pretty(raw) {
+      try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
+    }
+
+    function nanos(raw, field) {
+      try { return JSON.parse(raw)[field]; } catch { return null; }
+    }
+
+    function scrollDown() {
+      nextTick(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+    }
+
+    const headers = h => Object.entries(h).map(([k, v]) => `${k}: ${v}`).join('\n');
+    const num = v => v == null ? '—' : Number(v).toLocaleString('ru-RU');
+    const rate = v => v == null ? '—' : `${v.toFixed(1)} ток/с`;
+    const gb = bytes => bytes == null ? '—' : `${(bytes / 1024 ** 3).toFixed(1)} ГБ`;
+    const gpuShare = m => `${Math.round(m.vramBytes / m.memoryBytes * 100)}% GPU`;
+    const host = url => { try { return new URL(url).host; } catch { return url; } };
+    const path = url => { try { return new URL(url).pathname; } catch { return url; } };
+    const clock = iso => new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    function sec(ms) {
+      if (ms == null) return '—';
+      if (ms < 1000) return `${Math.round(ms)} мс`;
+      return `${(ms / 1000).toFixed(1)} с`;
+    }
+    function plural(value, one, few, many) {
+      const n = Number(value), mod10 = n % 10, mod100 = n % 100;
+      if (mod10 === 1 && mod100 !== 11) return one;
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+      return many;
+    }
+
+    onMounted(loadStatus);
+
+    return { question, busy, turns, status, statusError, elapsedMs, presets: PRESETS, loadStatus, ask, newChat, usePreset,
+      copyCurl, curl, pretty, nanos, headers, num, rate, gb, gpuShare, host, path, clock, sec, plural };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

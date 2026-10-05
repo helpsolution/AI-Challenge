@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: day26-local-chat
+  threads:
+    virtual:
+      enabled: true
+
+ollama:
+  base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+  model: ${OLLAMA_CHAT_MODEL:llama3.2:3b}
+  temperature: ${OLLAMA_TEMPERATURE:0.2}
+  system-prompt: ${SYSTEM_PROMPT:Ты — полезный ассистент. Отвечай на русском языке.}
+  # Холодный старт на CPU может занять минуты: модель сначала читается с диска в память.
+  timeout: 300s
+
+server:
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${PORT:8270}
+
+logging:
+  level:
+    advent.localchat: INFO
