@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Локальная мастерская — день 27</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  .nav { position: sticky; top: 0; z-index: 3; }
+  .page { max-width: 1280px; margin: 0 auto; padding: var(--space-8) var(--space-6) var(--space-12); }
+
+  .intro h1 { margin: 0 0 var(--space-2); }
+  .intro p { margin: 0; max-width: 760px; }
+
+  .tool-tabs { align-self: flex-start; max-width: 100%; flex-wrap: wrap; }
+  .tool-tabs .tab { height: 40px; padding-inline: 18px; font-size: 0.875rem; }
+  .tool-tabs .tab svg { width: 16px; height: 16px; max-width: 16px; max-height: 16px; }
+
+  .tool-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3) var(--space-6); }
+  .tool-head p { margin: 0; flex: 1 1 420px; color: var(--color-text-secondary); font-size: 0.875rem; line-height: 1.6; }
+  .options { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .options .tabs { flex-wrap: wrap; }
+
+  .workspace { align-items: stretch; }
+  .pane { min-width: 0; padding: var(--space-5); gap: var(--space-3); }
+  .pane:hover { border-color: var(--color-border); }
+  .pane-head { display: flex; align-items: center; gap: var(--space-2); min-height: 28px; flex-wrap: wrap; }
+  .pane-head .t-label-sm { color: var(--color-text-secondary); }
+  .pane-head .btn, .pane-head .count { margin-left: auto; }
+
+  .source { min-height: 300px; flex: 1; font-size: 0.9375rem; line-height: 1.6; }
+  .source.mono, .output.mono { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.65; }
+  .pane-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .pane-foot .spacer { flex: 1; }
+  .kbd { font-family: var(--font-mono); font-size: 0.6875rem; opacity: .8; }
+
+  .output-box { flex: 1; min-height: 300px; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-md);
+                background: var(--color-elevated); overflow: auto; max-height: 560px; }
+  .output { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-text-primary); font-size: 0.9375rem; line-height: 1.6;
+            font-family: var(--font-body); }
+  .caret { display: inline-block; width: 7px; height: 1.1em; margin-left: 1px; vertical-align: text-bottom; background: var(--color-primary);
+           animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .empty { height: 100%; min-height: 270px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2);
+           text-align: center; color: var(--color-text-muted); font-size: 0.875rem; }
+  .empty svg { width: 28px; height: 28px; stroke-width: 1.5; color: var(--color-border-strong); }
+  .waiting { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-secondary); font-size: 0.875rem; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--color-primary); animation: blink 1s ease-in-out infinite; }
+  .error-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-danger); font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.6; }
+
+  .facts { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+  .fact { display: flex; flex-direction: column; gap: 2px; }
+  .fact b { font-family: var(--font-mono); font-weight: 500; font-size: 0.9375rem; color: var(--color-text-primary); }
+  .fact span { font-size: 0.75rem; color: var(--color-text-muted); }
+
+  details.fold { border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+  details.fold > summary { cursor: pointer; padding: var(--space-2) var(--space-3); color: var(--color-text-secondary); font-size: 0.8125rem; }
+  details.fold[open] > summary { border-bottom: 1px solid var(--color-border); }
+  .mono-box { margin: 0; padding: var(--space-3); font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.6; white-space: pre-wrap;
+              overflow-wrap: anywhere; color: var(--color-text-secondary); max-height: 360px; overflow-y: auto; }
+
+  @media (max-width: 720px) {
+    .page { padding: var(--space-5) var(--space-4) var(--space-10); }
+    .nav .t-mono-sm, .nav-brand .t-muted { display: none; }
+    .source, .output-box { min-height: 220px; }
+    .tool-tabs { border-radius: 20px; }
+    .empty { min-height: 190px; }
+  }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="nav">
+    <div class="nav-brand">
+      <span class="nav-mark">M</span>
+      <span>Локальная мастерская</span>
+      <span class="t-body-sm t-muted">день 27</span>
+    </div>
+    <div class="nav-spacer"></div>
+    <span v-if="statusError" class="chip" data-tone="danger" :title="statusError">Ollama не отвечает</span>
+    <template v-else-if="status">
+      <span v-if="!status.installed" class="chip" data-tone="warning">{{ status.model }} не скачана</span>
+      <span v-else-if="status.loaded" class="chip" data-tone="success">● {{ status.model }} в памяти</span>
+      <span v-else class="chip" data-tone="neutral">○ {{ status.model }} выгружена</span>
+      <span class="t-mono-sm t-muted">Ollama {{ status.version }} · {{ host(status.baseUrl) }}</span>
+    </template>
+  </header>
+
+  <main class="page stack stack-lg">
+    <section class="intro">
+      <h1 class="t-headline-md">Текст на входе — результат на выходе</h1>
+      <p class="t-body-md t-secondary">Каждый запрос обрабатывает {{ status?.model || 'llama3.2:3b' }} на этом компьютере через Ollama.
+        Облака и API-ключей нет: данные не уходят дальше {{ status ? host(status.baseUrl) : 'localhost' }}.</p>
+    </section>
+
+    <nav class="tabs tool-tabs" role="tablist" aria-label="Инструменты">
+      <button v-for="t in tools" :key="t.id" class="tab" role="tab" :aria-selected="t.id === toolId" @click="toolId = t.id">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" v-html="icons[t.icon]"></svg>
+        {{ t.label }}
+      </button>
+    </nav>
+
+    <section class="tool-head">
+      <p>{{ tool.description }}</p>
+      <div v-if="tool.options.length" class="options">
+        <span class="t-label-sm t-muted">{{ tool.optionLabel }}</span>
+        <div class="tabs" role="radiogroup" :aria-label="tool.optionLabel">
+          <button v-for="o in tool.options" :key="o.id" class="tab" role="radio" :aria-checked="o.id === state.option"
+                  :aria-selected="o.id === state.option" @click="state.option = o.id">{{ o.label }}</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="workspace grid-2">
+      <article class="card pane">
+        <div class="pane-head">
+          <label class="t-label-sm" :for="'source-' + tool.id">{{ tool.inputLabel }}</label>
+          <span class="t-mono-sm t-muted count">{{ num(state.text.length) }} симв.</span>
+        </div>
+        <textarea :id="'source-' + tool.id" class="textarea source" :class="{ mono: tool.mono }" v-model="state.text"
+                  :placeholder="tool.placeholder" spellcheck="false"
+                  @keydown.meta.enter.prevent="run" @keydown.ctrl.enter.prevent="run"></textarea>
+        <div class="pane-foot">
+          <span class="t-body-sm t-muted">Примеры:</span>
+          <button v-for="e in tool.examples" :key="e.label" class="btn btn-tertiary btn-sm" type="button" @click="useExample(e)">{{ e.label }}</button>
+          <span class="spacer"></span>
+          <button v-if="running" class="btn btn-secondary" type="button" @click="stop">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" v-html="icons.stop"></svg>
+            Остановить
+          </button>
+          <button v-else class="btn btn-primary" type="button" :disabled="!state.text.trim()" @click="run">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" v-html="icons.play"></svg>
+            {{ tool.action }} <span class="kbd">{{ mac ? '⌘' : 'Ctrl' }}+Enter</span>
+          </button>
+        </div>
+      </article>
+
+      <article class="card pane" :class="{ 'card-accent': result?.status === 'error' }" :data-accent="result?.status === 'error' ? 'danger' : null" aria-live="polite">
+        <div class="pane-head">
+          <span class="t-label-sm">Результат</span>
+          <span v-if="result?.note" class="chip" data-tone="info">{{ result.note }}</span>
+          <span v-if="result?.check" class="chip" :data-tone="result.check.ok ? 'success' : 'danger'">{{ result.check.ok ? '✓' : '✗' }} {{ result.check.label }}</span>
+          <span v-if="result?.status === 'stopped'" class="chip" data-tone="warning">остановлено</span>
+          <button v-if="result?.text && result.status !== 'running'" class="btn btn-tertiary btn-sm" type="button" @click="copy">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" v-html="icons.copy"></svg>
+            {{ copied ? 'Скопировано' : 'Копировать' }}
+          </button>
+        </div>
+
+        <div class="output-box">
+          <div v-if="!result" class="empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" v-html="icons[tool.icon]"></svg>
+            Здесь появится ответ модели.<br>Выберите пример или вставьте свой текст.
+          </div>
+          <p v-else-if="result.status === 'error'" class="error-text">{{ result.error }}</p>
+          <div v-else-if="result.status === 'running' && !result.text" class="waiting">
+            <span class="pulse"></span>{{ waitingText }} {{ sec(result.elapsedMs) }}
+          </div>
+          <pre v-else class="output" :class="{ mono: tool.mono }">{{ result.text }}<span v-if="result.status === 'running'" class="caret"></span></pre>
+        </div>
+
+        <div v-if="result && result.status !== 'error'" class="facts">
+          <div v-if="result.firstTokenMs != null" class="fact"><b>{{ sec(result.firstTokenMs) }}</b><span>первый токен</span></div>
+          <div class="fact"><b>{{ sec(result.elapsedMs) }}</b><span>{{ result.status === 'running' ? 'идёт генерация' : 'весь запрос' }}</span></div>
+          <template v-if="result.metrics">
+            <div class="fact"><b>{{ num(result.metrics.promptTokens) }} → {{ num(result.metrics.answerTokens) }}</b><span>токены: запрос → ответ</span></div>
+            <div class="fact"><b>{{ rate(result.metrics.tokensPerSecond) }}</b><span>скорость</span></div>
+            <!-- Загрузку показываем только на холодном старте: когда модель в памяти, это миллисекунды. -->
+            <div v-if="result.metrics.loadSeconds > 0.5" class="fact"><b>{{ sec(result.metrics.loadSeconds * 1000) }}</b><span>загрузка модели с диска</span></div>
+          </template>
+        </div>
+
+        <details v-if="result?.request" class="fold">
+          <summary>Что ушло в Ollama · POST /api/chat</summary>
+          <pre class="mono-box">{{ pretty(result.request) }}</pre>
+        </details>
+      </article>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+// Иконки Lucide (stroke 1.75): languages, braces, pen-line, git-commit-horizontal, play, square, copy.
+const ICONS = {
+  translate: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
+  convert: '<path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/>',
+  commit: '<circle cx="12" cy="12" r="3"/><line x1="3" x2="9" y1="12" y2="12"/><line x1="15" x2="21" y1="12" y2="12"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  stop: '<rect width="14" height="14" x="5" y="5" rx="2"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+};
+
+const TOOLS = [
+  {
+    id: 'translate', label: 'Перевод', icon: 'translate', action: 'Перевести', inputLabel: 'Текст', mono: false,
+    description: 'Переводит текст, сохраняя тон и форматирование. «Авто» выбирает направление по алфавиту: кириллица — на английский, остальное — на русский.',
+    optionLabel: 'Язык', defaultOption: 'auto',
+    options: [
+      { id: 'auto', label: 'Авто RU ⇄ EN' }, { id: 'en', label: 'English' }, { id: 'ru', label: 'Русский' },
+      { id: 'de', label: 'Deutsch' }, { id: 'es', label: 'Español' }, { id: 'fr', label: 'Français' },
+    ],
+    placeholder: 'Вставьте текст на любом языке…',
+    examples: [
+      { label: 'Созвон по релизу', option: 'auto',
+        text: 'Привет! Завтра в 10:00 у нас созвон по релизу. Пожалуйста, проверьте, что все задачи в Jira закрыты, а тесты зелёные. Если что-то горит — пишите в чат, не ждите встречи.' },
+      { label: 'Deploy postponed', option: 'auto',
+        text: 'Hey team, the deploy is postponed until Friday because the database migration failed on staging. Please do not merge anything into main until we fix it.' },
+    ],
+  },
+  {
+    id: 'convert', label: 'Форматы', icon: 'convert', action: 'Преобразовать', inputLabel: 'Данные', mono: true,
+    description: 'Перекладывает данные из одного формата в другой. На входе JSON, YAML, CSV, XML или просто текст. Результат проверяет парсер, а не модель.',
+    optionLabel: 'Во что', defaultOption: 'json',
+    options: [{ id: 'json', label: 'JSON' }, { id: 'yaml', label: 'YAML' }, { id: 'csv', label: 'CSV' }, { id: 'markdown', label: 'Markdown-таблица' }],
+    placeholder: 'Вставьте данные: CSV, JSON, YAML, XML или текст…',
+    examples: [
+      { label: 'CSV сотрудников', option: 'json',
+        text: 'name,role,city,salary\nАнна,backend,Москва,250000\nБорис,frontend,Казань,210000\nВера,QA,Москва,180000' },
+      { label: 'JSON задач', option: 'markdown',
+        text: '[\n  {"id": 1, "title": "Fix login", "status": "done", "points": 3},\n  {"id": 2, "title": "Add search", "status": "in progress", "points": 5},\n  {"id": 3, "title": "Dark theme", "status": "todo", "points": 2}\n]' },
+      { label: 'Текст заказа', option: 'json',
+        text: 'Заказ №1842 от 3 октября: клиент Ольга Петрова, телефон +7 912 345-67-89, доставка в Екатеринбург, ул. Ленина 5. Позиции: два чайника по 3490 ₽ и кружка за 590 ₽.' },
+    ],
+  },
+  {
+    id: 'edit', label: 'Редактура', icon: 'edit', action: 'Обработать', inputLabel: 'Текст', mono: false,
+    description: 'Правит текст на том же языке: исправляет ошибки, сокращает или меняет тон.',
+    optionLabel: 'Что сделать', defaultOption: 'fix',
+    options: [{ id: 'fix', label: 'Исправить ошибки' }, { id: 'shorten', label: 'Сократить' }, { id: 'formal', label: 'Официально' }, { id: 'simple', label: 'Проще' }],
+    placeholder: 'Вставьте текст, который нужно поправить…',
+    examples: [
+      { label: 'Объявление с ошибками', option: 'fix',
+        text: 'привет всем, хочу сообщить что завтра офис будет закрыт изза отключения электричества, поэтому работаем из дома. если у кого то есть вопросы пишите мне в личку' },
+      { label: 'Длинное письмо', option: 'shorten',
+        text: 'Добрый день, коллеги! Хотел бы немного рассказать о том, как прошла наша встреча с заказчиком на прошлой неделе. В целом встреча прошла хорошо и продуктивно, заказчик остался доволен тем, что мы показали, хотя у него и были некоторые замечания по поводу дизайна главной страницы. Главное замечание касалось того, что кнопка оформления заказа плохо заметна. Мы договорились, что исправим это до конца следующей недели и после этого ещё раз созвонимся, чтобы показать результат. Также заказчик попросил добавить выгрузку отчётов в Excel, но это мы обсудим отдельно, потому что задача большая и требует оценки.' },
+    ],
+  },
+  {
+    id: 'commit', label: 'Коммит', icon: 'commit', action: 'Написать сообщение', inputLabel: 'git diff', mono: true,
+    description: 'Пишет сообщение коммита в стиле Conventional Commits по выводу git diff. Тот же код, что у CLI aicommit: модель отвечает JSON по схеме, а заголовок type(scope): subject собирает код.',
+    options: [],
+    placeholder: 'Вставьте вывод git diff или git diff --staged…',
+    examples: [
+      { label: 'Деление на ноль',
+        text: 'diff --git a/calculator/Calc.kt b/calculator/Calc.kt\nindex 3236eb9..900848e 100644\n--- a/calculator/Calc.kt\n+++ b/calculator/Calc.kt\n@@ -1,4 +1,7 @@\n class Calc {\n     fun add(a: Int, b: Int) = a + b\n-    fun div(a: Int, b: Int) = a / b\n+    fun div(a: Int, b: Int): Int {\n+        require(b != 0) { "Division by zero" }\n+        return a / b\n+    }\n }' },
+      { label: 'Правка README',
+        text: 'diff --git a/README.md b/README.md\nindex 1b2c3d4..5e6f7a8 100644\n--- a/README.md\n+++ b/README.md\n@@ -8,3 +8,11 @@ cd day27\n ./gradlew :studio:bootRun\n \n Открыть http://localhost:8280\n+\n+## Настройки\n+\n+| Переменная | По умолчанию |\n+|---|---|\n+| `OLLAMA_MODEL` | `llama3.2:3b` |\n+| `OLLAMA_BASE_URL` | `http://localhost:11434` |\n+| `PORT` | `8280` |' },
+    ],
+  },
+];
+
+createApp({
+  setup() {
+    const toolId = ref('translate');
+    // У каждого инструмента свой ввод, опция и результат: при переключении вкладок ничего не теряется.
+    const states = reactive(Object.fromEntries(TOOLS.map(t => [t.id, { text: '', option: t.defaultOption ?? '', result: null }])));
+    const tool = computed(() => TOOLS.find(t => t.id === toolId.value));
+    const state = computed(() => states[toolId.value]);
+    const result = computed(() => state.value.result);
+    const running = ref(false);
+    const copied = ref(false);
+    const status = ref(null);
+    const statusError = ref('');
+    const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+    let controller = null;
+
+    const waitingText = computed(() => toolId.value === 'commit'
+      ? 'Модель пишет JSON по схеме, код соберёт сообщение…'
+      : 'Модель читает запрос…');
+
+    async function loadStatus() {
+      try {
+        const response = await fetch('/api/status');
+        const body = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
+        if (!response.ok) throw new Error(body.message || `HTTP ${response.status}`);
+        status.value = body; statusError.value = '';
+      } catch (e) {
+        statusError.value = e instanceof TypeError ? `Сервис не ответил: ${e.message}` : e.message;
+      }
+    }
+
+    function useExample(example) {
+      state.value.text = example.text;
+      if (example.option) state.value.option = example.option;
+    }
+
+    async function run() {
+      const current = state.value;
+      if (running.value || !current.text.trim()) return;
+      running.value = true;
+      controller = new AbortController();
+      current.result = { status: 'running', text: '', note: null, check: null, metrics: null, request: null, error: null,
+                         firstTokenMs: null, elapsedMs: 0 };
+      const r = current.result;
+      const started = performance.now();
+      const timer = setInterval(() => { r.elapsedMs = performance.now() - started; }, 100);
+      try {
+        const response = await fetch('/api/run', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+          body: JSON.stringify({ tool: toolId.value, option: current.option, text: current.text }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
+          throw new Error(body.message || `HTTP ${response.status}`);
+        }
+        await readEvents(response, event => {
+          if (event.type === 'start') r.note = event.note;
+          else if (event.type === 'delta') {
+            if (r.firstTokenMs == null) r.firstTokenMs = performance.now() - started;
+            r.text += event.text;
+          } else if (event.type === 'done') {
+            Object.assign(r, { status: 'done', text: event.text, check: event.check, metrics: event.metrics, request: event.request });
+          } else if (event.type === 'error') {
+            Object.assign(r, { status: 'error', error: event.message });
+          }
+        });
+        if (r.status === 'running') Object.assign(r, { status: 'error', error: 'Стрим оборвался без результата' });
+      } catch (e) {
+        if (e.name === 'AbortError') r.status = 'stopped';
+        else Object.assign(r, { status: 'error', error: e instanceof TypeError ? `Сервис не ответил: ${e.message}` : e.message });
+      } finally {
+        clearInterval(timer);
+        r.elapsedMs = performance.now() - started;
+        running.value = false;
+        loadStatus();
+      }
+    }
+
+    // Ответ — NDJSON: по JSON-событию в строке, строки приходят по мере генерации.
+    async function readEvents(response, onEvent) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let newline;
+        while ((newline = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          if (line.trim()) onEvent(JSON.parse(line));
+        }
+      }
+    }
+
+    function stop() { controller?.abort(); }
+
+    async function copy() {
+      try {
+        await navigator.clipboard.writeText(result.value.text);
+        copied.value = true;
+        setTimeout(() => { copied.value = false; }, 1500);
+      } catch { /* буфер недоступен — текст можно выделить вручную */ }
+    }
+
+    const num = v => v == null ? '—' : Number(v).toLocaleString('ru-RU');
+    const rate = v => v == null ? '—' : `${v.toFixed(1).replace('.', ',')} ток/с`;
+    const host = url => { try { return new URL(url).host; } catch { return url; } };
+    const pretty = raw => { try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; } };
+    function sec(ms) {
+      if (ms == null || Number.isNaN(ms)) return '—';
+      if (ms < 1000) return `${Math.round(ms)} мс`;
+      return `${(ms / 1000).toFixed(1).replace('.', ',')} с`;
+    }
+
+    onMounted(loadStatus);
+
+    return { tools: TOOLS, icons: ICONS, toolId, tool, state, result, running, copied, status, statusError, mac, waitingText,
+      useExample, run, stop, copy, num, rate, host, pretty, sec };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
