@@ -1,0 +1,934 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Лаборатория — день 29</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  .nav { position: sticky; top: 0; z-index: 5; }
+  .nav .tabs .tab { height: 34px; padding-inline: 14px; }
+  .loaded-chip { font-family: var(--font-mono); font-size: 0.75rem; }
+  .page { max-width: 1440px; margin: 0 auto; padding: var(--space-5) var(--space-6) var(--space-10); }
+  .layout { display: grid; grid-template-columns: 372px minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+
+  /* Настройки */
+  .config { position: sticky; top: 84px; padding: var(--space-5); gap: var(--space-4); max-height: calc(100vh - 100px); overflow-y: auto; }
+  .config:hover { border-color: var(--color-border); }
+  .config-head { display: flex; align-items: center; gap: var(--space-2); }
+  .config-head .chip { margin-left: auto; }
+  .preset-tabs { display: flex; width: 100%; }
+  .preset-tabs .tab { flex: 1; height: 32px; padding-inline: 6px; font-size: 0.78rem; }
+  .preset-note { margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--color-text-secondary); }
+  .block { display: flex; flex-direction: column; gap: var(--space-2); }
+  .block-title { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+  .block-title .t-body-sm { color: var(--color-text-muted); font-size: 0.75rem; }
+  .model-meta { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-text-muted); }
+  .system { height: 112px; min-height: 64px; resize: vertical; font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.55; padding: 8px 10px; }
+  .system.tall { height: 340px; }
+  .link-btn { appearance: none; border: 0; background: none; padding: 0; color: var(--color-primary); font: inherit; font-size: 0.75rem; cursor: pointer; }
+  .toggle { display: flex; align-items: center; gap: var(--space-3); font-size: 0.875rem; min-height: 28px; }
+  .toggle .hint { margin-left: auto; font-size: 0.75rem; color: var(--color-text-muted); font-family: var(--font-mono); }
+  .params { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2) var(--space-3); }
+  .param label { display: block; font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-text-secondary); margin-bottom: 4px; }
+  .param .input { height: 34px; font-family: var(--font-mono); font-size: 0.8125rem; }
+  .param .input::placeholder { font-family: var(--font-body); font-size: 0.75rem; }
+  details.fold { border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+  details.fold > summary { cursor: pointer; padding: var(--space-2) var(--space-3); color: var(--color-text-secondary); font-size: 0.8125rem; }
+  details.fold[open] > summary { border-bottom: 1px solid var(--color-border); }
+  .mono-box { margin: 0; padding: var(--space-3); font-family: var(--font-mono); font-size: 0.72rem; line-height: 1.55; white-space: pre-wrap;
+              overflow-wrap: anywhere; color: var(--color-text-secondary); max-height: 320px; overflow-y: auto; }
+  .build { border-top: 1px solid var(--color-border); padding-top: var(--space-4); }
+  .build-row { display: flex; gap: var(--space-2); }
+  .build-row .input { height: 36px; font-family: var(--font-mono); font-size: 0.8125rem; }
+
+  /* Прогон */
+  .main { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+  .run-bar { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); }
+  .run-bar:hover { border-color: var(--color-border); }
+  .run-bar .name { flex: 1 1 220px; height: 38px; }
+  .run-bar .tabs .tab { height: 30px; padding-inline: 12px; }
+  .run-bar .t-label-sm { color: var(--color-text-muted); }
+  .kbd { font-family: var(--font-mono); font-size: 0.6875rem; opacity: .8; }
+  .progress { height: 4px; border-radius: 2px; background: var(--color-elevated); overflow: hidden; }
+  .progress > span { display: block; height: 100%; background: var(--color-primary); transition: width .2s ease; }
+  .phase { display: flex; align-items: center; gap: var(--space-2); font-size: 0.8125rem; color: var(--color-text-secondary); min-height: 20px; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--color-primary); animation: blink 1s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: .2; } }
+
+  .tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
+  .stat-tile.stat-sm { padding: 14px 16px; gap: 8px; }
+  .stat-tile.stat-sm .stat-value { font-size: 1.625rem; }
+  .stat-tile .stat-value small { font-size: 0.8125rem; font-weight: 500; color: var(--color-text-muted); margin-left: 4px; letter-spacing: 0; }
+  .stat-tile .stat-foot { font-size: 0.75rem; line-height: 1.4; }
+  .stat-tile.is-empty .stat-value { color: var(--color-border-strong); }
+
+  .strip { display: flex; flex-direction: row; flex-wrap: wrap; gap: var(--space-2) var(--space-5); align-items: center; padding: var(--space-3) var(--space-4); }
+  .strip:hover { border-color: var(--color-border); }
+  .fact { display: flex; align-items: baseline; gap: 6px; font-size: 0.75rem; color: var(--color-text-muted); }
+  .fact b { font-family: var(--font-mono); font-weight: 600; font-size: 0.8125rem; color: var(--color-text-primary); }
+  .field-bars { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+  .field-bar { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-text-secondary); }
+  .field-bar .track { width: 56px; height: 6px; border-radius: 3px; background: var(--color-elevated); overflow: hidden; }
+  .field-bar .track span { display: block; height: 100%; border-radius: 3px; background: var(--color-info); }
+  .divider-v { width: 1px; align-self: stretch; background: var(--color-border); }
+
+  .table-card { padding: 0; overflow: hidden; }
+  .table-card:hover { border-color: var(--color-border); }
+  .table-scroll { max-height: calc(100vh - 430px); min-height: 280px; overflow: auto; }
+  table.results { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+  .results th { position: sticky; top: 0; z-index: 1; background: var(--color-surface); text-align: left; font-family: var(--font-mono); font-size: 0.7rem;
+                font-weight: 600; color: var(--color-text-muted); padding: 9px 10px; border-bottom: 1px solid var(--color-border); white-space: nowrap; }
+  .results td { padding: 7px 10px; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+  .results tr.ticket-row { cursor: pointer; }
+  .results tr.ticket-row:hover td { background: var(--color-elevated); }
+  .results tr.is-current td { background: var(--color-info-soft); }
+  .rid { font-family: var(--font-mono); color: var(--color-text-muted); width: 40px; }
+  .rtext { max-width: 340px; }
+  .rtext span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .val { font-family: var(--font-mono); font-size: 0.75rem; white-space: nowrap; }
+  .val.ok { color: var(--color-text-primary); }
+  .val.ok::before { content: "✓ "; color: var(--color-success); }
+  .val.bad { color: var(--color-danger); }
+  .val.bad::before { content: "✗ "; }
+  .val .exp { display: block; color: var(--color-text-muted); font-size: 0.6875rem; }
+  .val.expected { color: var(--color-text-muted); }
+  .rtime { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-text-secondary); white-space: nowrap; text-align: right; }
+  .dots { display: inline-flex; gap: 3px; vertical-align: middle; }
+  .dot { width: 9px; height: 9px; border-radius: 2px; background: var(--color-success); }
+  .dot.bad { background: var(--color-danger); }
+  .detail td { background: var(--color-background); }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+  .detail-grid .mono-box { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); max-height: 220px; }
+  .detail-text { white-space: pre-wrap; line-height: 1.55; margin: 0 0 var(--space-2); }
+
+  /* Свой текст */
+  .try-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+  .try-card { padding: var(--space-5); gap: var(--space-3); }
+  .try-card:hover { border-color: var(--color-border); }
+  .try-text { min-height: 180px; font-size: 0.9375rem; line-height: 1.6; }
+  .examples { display: flex; flex-wrap: wrap; gap: 6px; }
+  .fields-table { width: 100%; border-collapse: collapse; }
+  .fields-table td { padding: 9px 4px; border-bottom: 1px solid var(--color-border); font-size: 0.875rem; }
+  .fields-table td:first-child { font-family: var(--font-mono); color: var(--color-text-muted); width: 92px; font-size: 0.8125rem; }
+  .fields-table .val { font-size: 0.875rem; }
+  .error-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-danger); font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.6; }
+  .empty { padding: var(--space-8) var(--space-4); text-align: center; color: var(--color-text-muted); font-size: 0.875rem; }
+
+  /* Журнал */
+  .journal-top { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: var(--space-4); align-items: stretch; }
+  .chart-card, .compare-card { padding: var(--space-4) var(--space-5); gap: var(--space-3); }
+  .chart-card:hover, .compare-card:hover { border-color: var(--color-border); }
+  .chart-wrap { position: relative; }
+  .chart-wrap svg { width: 100%; height: auto; display: block; }
+  .axis-label { font-family: var(--font-body); font-size: 11px; fill: var(--color-text-muted); }
+  .tick { font-family: var(--font-mono); font-size: 10.5px; fill: var(--color-text-muted); }
+  .grid-line { stroke: var(--color-border); stroke-width: 1; }
+  .point { fill: var(--color-info); stroke: var(--color-surface); stroke-width: 2; }
+  .point.sel { fill: var(--color-text-primary); }
+  .point-label { font-family: var(--font-body); font-size: 11.5px; font-weight: 600; fill: var(--color-text-primary);
+                 paint-order: stroke; stroke: var(--color-surface); stroke-width: 4px; stroke-linejoin: round; }
+  .hit { fill: transparent; cursor: pointer; }
+  .tooltip { position: absolute; pointer-events: none; transform: translate(-50%, calc(-100% - 12px)); background: var(--color-surface);
+             border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(15, 18, 25, .12);
+             padding: 8px 10px; font-size: 0.75rem; white-space: nowrap; z-index: 2; }
+  .tooltip b { display: block; font-size: 0.8125rem; margin-bottom: 2px; }
+  .tooltip span { font-family: var(--font-mono); color: var(--color-text-secondary); }
+  .compare-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+  .compare-table th { text-align: right; font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); padding: 6px 8px; border-bottom: 1px solid var(--color-border); }
+  .compare-table th:first-child { text-align: left; }
+  .compare-table td { padding: 6px 8px; border-bottom: 1px solid var(--color-border); text-align: right; font-family: var(--font-mono); font-size: 0.8125rem; white-space: nowrap; }
+  .compare-table td:first-child { text-align: left; font-family: var(--font-body); color: var(--color-text-secondary); white-space: normal; }
+  .delta.better { color: var(--color-success); }
+  .delta.worse { color: var(--color-danger); }
+  .ab { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; font-family: var(--font-mono); font-size: 0.7rem; font-weight: 700;
+        background: var(--color-elevated); color: var(--color-text-secondary); margin-right: 6px; }
+  .ab.on { background: var(--color-text-primary); color: #fff; }
+  .journal-table td { white-space: nowrap; }
+  .journal-table td.jname { white-space: normal; min-width: 180px; }
+  .journal-table .num { font-family: var(--font-mono); font-size: 0.75rem; text-align: right; }
+  .journal-table th.num { text-align: right; }
+  .pick { appearance: none; border: 1px solid var(--color-border-strong); background: var(--color-surface); border-radius: 6px; width: 24px; height: 24px;
+          font-family: var(--font-mono); font-size: 0.7rem; font-weight: 700; color: var(--color-text-muted); cursor: pointer; }
+  .pick.on { background: var(--color-text-primary); border-color: var(--color-text-primary); color: #fff; }
+  .icon-btn { appearance: none; border: 0; background: none; color: var(--color-text-muted); cursor: pointer; padding: 2px; }
+  .icon-btn:hover { color: var(--color-danger); }
+  .icon-btn svg { width: 15px; height: 15px; }
+  .diff-list { display: flex; flex-direction: column; gap: 6px; max-height: 230px; overflow-y: auto; }
+  .diff { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 2px 8px; font-size: 0.75rem; padding: 6px 0; border-bottom: 1px solid var(--color-border); }
+  .diff .rid { grid-row: span 2; }
+  .diff .text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-secondary); }
+  .diff .vals { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+
+  svg.i { width: 16px; height: 16px; flex: none; }
+
+  @media (max-width: 1100px) {
+    .layout, .journal-top, .try-grid { grid-template-columns: minmax(0, 1fr); }
+    .config { position: static; max-height: none; }
+    .tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+    .table-scroll { max-height: none; }
+  }
+  @media (max-width: 640px) {
+    .page { padding: var(--space-4) var(--space-4) var(--space-8); }
+    .nav-brand .t-muted, .loaded-chip { display: none; }
+    .detail-grid { grid-template-columns: 1fr; }
+    .table-scroll { overflow-x: auto; }
+  }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="nav">
+    <div class="nav-brand">
+      <span class="nav-mark">L</span>
+      <span>Лаборатория</span>
+      <span class="t-body-sm t-muted">день 29</span>
+    </div>
+    <nav class="tabs" aria-label="Разделы">
+      <button class="tab" :aria-selected="tab === 'run'" @click="tab = 'run'">Прогон по набору</button>
+      <button class="tab" :aria-selected="tab === 'try'" @click="tab = 'try'">Свой текст</button>
+      <button class="tab" :aria-selected="tab === 'journal'" @click="openJournal">Журнал · {{ journal.list.length }}</button>
+    </nav>
+    <div class="nav-spacer"></div>
+    <span v-if="statusError" class="chip" data-tone="danger" :title="statusError">Ollama не отвечает</span>
+    <template v-else-if="status">
+      <span v-for="m in status.loaded" :key="m.name" class="chip loaded-chip" data-tone="success">● {{ m.name }} · {{ gb(m.memoryBytes) }} · окно {{ num(m.contextLength) }}</span>
+      <span v-if="!status.loaded.length" class="chip" data-tone="neutral">○ модели выгружены</span>
+      <span class="t-mono-sm t-muted">Ollama {{ status.version }}</span>
+    </template>
+  </header>
+
+  <main class="page">
+    <div v-if="tab !== 'journal'" class="layout">
+      <!-- Настройки: одна конфигурация на прогон и на свой текст -->
+      <aside class="card config">
+        <div class="config-head">
+          <span class="t-label-sm">Конфигурация</span>
+          <span v-if="modified" class="chip" data-tone="warning">изменена</span>
+        </div>
+        <div class="tabs preset-tabs" role="radiogroup" aria-label="Пресет">
+          <button v-for="p in presets" :key="p.id" class="tab" role="radio" :aria-checked="p.id === presetId" :aria-selected="p.id === presetId && !modified"
+                  @click="applyPreset(p)">{{ p.label }}</button>
+        </div>
+        <p class="preset-note" v-if="preset">{{ modified ? 'Изменено вручную. Пресет: «' + preset.label + '».' : preset.description }}</p>
+
+        <div class="block">
+          <div class="block-title"><label class="field-label" for="model">Модель</label>
+            <span v-if="modelInfo" class="model-meta">{{ modelInfo.parameterSize }} · {{ modelInfo.quantization }} · {{ gb(modelInfo.sizeBytes) }}</span></div>
+          <select id="model" class="select" v-model="config.model">
+            <option v-for="m in models" :key="m.name" :value="m.name">{{ m.name }}</option>
+          </select>
+        </div>
+
+        <div class="block">
+          <div class="block-title"><label class="field-label" for="system">Системный промпт</label>
+            <button class="link-btn" type="button" @click="tallPrompt = !tallPrompt">{{ tallPrompt ? 'свернуть' : 'развернуть' }}</button></div>
+          <textarea id="system" class="textarea system" :class="{ tall: tallPrompt }" v-model="config.system" spellcheck="false"
+                    placeholder="Пусто — без системного сообщения (у собранной модели он внутри)"></textarea>
+          <label class="toggle"><span class="switch"><input type="checkbox" v-model="config.fewShot"><span class="switch-track"></span><span class="switch-thumb"></span></span>
+            Примеры (few-shot)<span class="hint">{{ shots.length }} пары</span></label>
+          <label class="toggle"><span class="switch"><input type="checkbox" v-model="config.schema"><span class="switch-track"></span><span class="switch-thumb"></span></span>
+            JSON-схема в format<span class="hint">5 полей, enum</span></label>
+          <label v-if="modelInfo?.thinking" class="toggle"><span class="switch"><input type="checkbox" v-model="config.think"><span class="switch-track"></span><span class="switch-thumb"></span></span>
+            Рассуждения (think)<span class="hint">{{ config.think ? 'медленно' : 'выключены' }}</span></label>
+        </div>
+
+        <div class="block">
+          <div class="block-title"><span class="field-label">Параметры</span><span class="t-body-sm">пусто — значение модели</span></div>
+          <div class="params">
+            <div class="param" v-for="p in PARAMS" :key="p.key">
+              <label :for="'p-' + p.key">{{ p.key }}</label>
+              <input :id="'p-' + p.key" class="input" v-model.trim="config.options[p.key]" :placeholder="placeholder(p)" inputmode="decimal">
+            </div>
+          </div>
+        </div>
+
+        <details class="fold">
+          <summary>Что уйдёт в Ollama · POST /api/chat</summary>
+          <pre class="mono-box">{{ preview }}</pre>
+        </details>
+
+        <div class="build block">
+          <div class="block-title"><span class="field-label">Собрать модель</span><span class="t-body-sm">ollama create</span></div>
+          <div class="build-row">
+            <input class="input" v-model.trim="build.name" placeholder="triage:3b" aria-label="Имя новой модели">
+            <button class="btn btn-secondary btn-sm" type="button" :disabled="build.running || !build.name || !config.model" @click="buildModel">
+              <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS.hammer"></svg>
+              {{ build.running ? 'Собираю…' : 'Собрать' }}</button>
+          </div>
+          <span class="t-body-sm t-muted" style="font-size:.75rem">Промпт, примеры и параметры запишутся в {{ config.model || 'модель' }} → {{ build.name || 'новое имя' }}</span>
+          <p v-if="build.error" class="error-text">{{ build.error }}</p>
+          <template v-if="build.result">
+            <div class="row" style="gap:8px; flex-wrap:wrap">
+              <span class="chip" data-tone="success">✓ {{ build.result.name }} собрана</span>
+              <button class="btn btn-tertiary btn-sm" type="button" @click="useBuilt">Выбрать её</button>
+            </div>
+            <details class="fold"><summary>Modelfile</summary><pre class="mono-box">{{ build.result.modelfile }}</pre></details>
+          </template>
+        </div>
+      </aside>
+
+      <!-- Прогон по набору -->
+      <section v-if="tab === 'run'" class="main">
+        <div class="card run-bar">
+          <input class="input name" v-model="run.name" :placeholder="defaultName" aria-label="Название прогона">
+          <span class="t-label-sm">Набор</span>
+          <div class="tabs" role="radiogroup" aria-label="Набор">
+            <button v-for="s in SETS" :key="s.id" class="tab" role="radio" :aria-checked="run.set === s.id" :aria-selected="run.set === s.id"
+                    :disabled="run.running" @click="selectSet(s.id)">{{ s.label }} · {{ setSize(s.id) }}</button>
+          </div>
+          <div class="tabs" role="radiogroup" aria-label="Повторы">
+            <button v-for="r in [1, 3]" :key="r" class="tab" role="radio" :aria-checked="run.repeats === r" :aria-selected="run.repeats === r"
+                    :disabled="run.running" @click="run.repeats = r">×{{ r }}</button>
+          </div>
+          <button v-if="run.running" class="btn btn-secondary" type="button" @click="stopRun">
+            <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS.stop"></svg>
+            Остановить</button>
+          <button v-else class="btn btn-primary" type="button" :disabled="!config.model" @click="startRun">
+            <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS.play"></svg>
+            Запустить прогон</button>
+        </div>
+
+        <div v-if="run.running || run.phase" class="stack stack-sm">
+          <div class="progress"><span :style="{ width: progressPct + '%' }"></span></div>
+          <div class="phase"><span v-if="run.running" class="pulse"></span>{{ run.phase }}</div>
+        </div>
+        <div v-if="run.error" class="card card-accent" data-accent="danger" style="padding:14px 16px"><p class="error-text">{{ run.error }}</p></div>
+
+        <div class="tiles">
+          <div class="stat-tile stat-sm" data-tone="success" :class="{ 'is-empty': !live }">
+            <span class="stat-eyebrow">Поля верно</span>
+            <span class="stat-value">{{ live ? pct(live.fieldsCorrect, live.fieldsTotal) : '—' }}<small v-if="live">{{ live.fieldsCorrect }}/{{ live.fieldsTotal }}</small></span>
+            <span class="stat-foot">5 полей у каждого обращения</span>
+          </div>
+          <div class="stat-tile stat-sm" data-tone="success" :class="{ 'is-empty': !live }">
+            <span class="stat-eyebrow">Целиком верно</span>
+            <span class="stat-value">{{ live ? live.exact : '—' }}<small v-if="live">из {{ live.attempts }}</small></span>
+            <span class="stat-foot">все 5 полей без ошибки</span>
+          </div>
+          <div class="stat-tile stat-sm" data-tone="info" :class="{ 'is-empty': !live }">
+            <span class="stat-eyebrow">Валидный JSON</span>
+            <span class="stat-value">{{ live ? live.validJson : '—' }}<small v-if="live">из {{ live.attempts }}</small></span>
+            <span class="stat-foot">{{ live && live.truncated ? 'оборвано по num_predict: ' + live.truncated : 'объект с нужными ключами' }}</span>
+          </div>
+          <div class="stat-tile stat-sm" data-tone="warning" :class="{ 'is-empty': !live }">
+            <span class="stat-eyebrow">Время ответа</span>
+            <span class="stat-value">{{ live ? secs(live.latencyMedianMs) : '—' }}</span>
+            <span class="stat-foot">{{ live ? 'медиана · p90 ' + secs(live.latencyP90Ms) : 'медиана по прогону' }}</span>
+          </div>
+          <div class="stat-tile stat-sm" :class="{ 'is-empty': !run.resources }">
+            <span class="stat-eyebrow">Память модели</span>
+            <span class="stat-value">{{ run.resources ? gb(run.resources.memoryBytes) : '—' }}</span>
+            <span class="stat-foot">{{ run.resources ? 'окно ' + num(run.resources.contextLength) + ' · загрузка ' + secs(run.resources.loadMs) : 'после загрузки, из /api/ps' }}</span>
+          </div>
+        </div>
+
+        <div v-if="live" class="card strip">
+          <div class="field-bars">
+            <div v-for="f in FIELDS" :key="f" class="field-bar" :title="f + ': ' + live.perField[f] + ' из ' + live.attempts">
+              {{ f }} <span class="track"><span :style="{ width: live.perField[f] / live.attempts * 100 + '%' }"></span></span> {{ live.perField[f] }}/{{ live.attempts }}
+            </div>
+          </div>
+          <span class="divider-v"></span>
+          <div class="fact"><b>{{ rate(live.generationTps) }}</b>генерация</div>
+          <div class="fact"><b>{{ num(live.promptTokens) }}</b>ток. промпта<template v-if="live.cachedTokens">, {{ num(live.cachedTokens) }} из кэша</template></div>
+          <div class="fact"><b>{{ num(live.answerTokens) }}</b>ток. ответа</div>
+          <div v-if="live.stable != null" class="fact"><b>{{ live.stable }}/{{ live.tickets }}</b>одинаково во всех повторах</div>
+          <div v-if="run.resources" class="fact"><b>{{ run.resources.quantization }}</b>{{ gb(run.resources.fileBytes) }} на диске</div>
+        </div>
+
+        <div class="card table-card">
+          <div class="table-scroll">
+            <table class="results">
+              <thead><tr>
+                <th>#</th><th>Обращение</th><th v-for="f in FIELDS" :key="f">{{ f }}</th><th v-if="run.repeats > 1 && run.attempts.length">повторы</th><th style="text-align:right">время</th>
+              </tr></thead>
+              <tbody>
+                <template v-for="t in setTickets" :key="t.id">
+                  <tr class="ticket-row" :class="{ 'is-current': run.running && currentId === t.id }" @click="expanded = expanded === t.id ? null : t.id">
+                    <td class="rid">{{ t.id }}</td>
+                    <td class="rtext"><span :title="t.text">{{ t.text }}</span>
+                      <span v-if="first(t.id) && !first(t.id).valid" class="chip" data-tone="danger" style="margin-top:4px">не JSON</span></td>
+                    <td v-for="f in FIELDS" :key="f">
+                      <template v-if="first(t.id)">
+                        <span v-if="first(t.id).valid" class="val" :class="first(t.id).fields[f].ok ? 'ok' : 'bad'">{{ show(first(t.id).fields[f]) }}
+                          <span v-if="!first(t.id).fields[f].ok" class="exp">→ {{ fmt(t.expected[f]) }}</span></span>
+                        <span v-else class="val expected">—</span>
+                      </template>
+                      <span v-else class="val expected">{{ fmt(t.expected[f]) }}</span>
+                    </td>
+                    <td v-if="run.repeats > 1 && run.attempts.length"><span class="dots">
+                      <span v-for="a in byTicket[t.id] || []" :key="a.repeat" class="dot" :class="{ bad: a.correct < 5 }" :title="'повтор ' + a.repeat + ': ' + a.correct + '/5'"></span></span></td>
+                    <td class="rtime">{{ first(t.id) ? secs(first(t.id).wallMs) : '' }}</td>
+                  </tr>
+                  <tr v-if="expanded === t.id" class="detail">
+                    <td></td>
+                    <td :colspan="FIELDS.length + 2 + (run.repeats > 1 && run.attempts.length ? 1 : 0)">
+                      <p class="detail-text">{{ t.text }}</p>
+                      <div class="detail-grid">
+                        <div><div class="t-label-sm t-muted" style="margin-bottom:4px">Разметка</div><pre class="mono-box">{{ pretty(t.expected) }}</pre></div>
+                        <div><div class="t-label-sm t-muted" style="margin-bottom:4px">Ответ модели{{ first(t.id) ? ' · ' + first(t.id).answerTokens + ' ток., ' + secs(first(t.id).wallMs) : '' }}</div>
+                          <pre class="mono-box">{{ first(t.id) ? first(t.id).output : 'Ещё не прогонялось' }}</pre>
+                          <p v-if="first(t.id)?.error" class="error-text" style="font-size:.75rem; margin-top:4px">{{ first(t.id).error }}</p></div>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Свой текст -->
+      <section v-else class="main">
+        <div class="try-grid">
+          <article class="card try-card">
+            <label class="t-label-sm" for="try-text">Обращение</label>
+            <textarea id="try-text" class="textarea try-text" v-model="trial.text" placeholder="Напишите обращение покупателя или выберите пример…"
+                      @input="trial.ticketId = null" @keydown.meta.enter.prevent="tryOne" @keydown.ctrl.enter.prevent="tryOne"></textarea>
+            <div class="examples">
+              <span class="t-body-sm t-muted">Из набора:</span>
+              <button v-for="id in TRY_EXAMPLES" :key="id" class="btn btn-tertiary btn-sm" type="button" :title="ticket(id)?.text" @click="useTicket(id)">{{ id }}</button>
+              <button class="btn btn-tertiary btn-sm" type="button" @click="useRandom">случайное</button>
+            </div>
+            <div class="row" style="justify-content:flex-end">
+              <button class="btn btn-primary" type="button" :disabled="trial.running || !trial.text.trim() || !config.model" @click="tryOne">
+                <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS.play"></svg>
+                {{ trial.running ? 'Разбираю…' : 'Разобрать' }} <span class="kbd">{{ mac ? '⌘' : 'Ctrl' }}+Enter</span></button>
+            </div>
+          </article>
+
+          <article class="card try-card" aria-live="polite">
+            <div class="row" style="gap:8px; flex-wrap:wrap">
+              <span class="t-label-sm">Результат</span>
+              <span v-if="trial.result" class="chip" :data-tone="trial.result.attempt.valid ? 'success' : 'danger'">{{ trial.result.attempt.valid ? '✓ JSON' : '✗ не JSON' }}</span>
+              <span v-if="trial.result?.checked" class="chip" :data-tone="trial.result.attempt.correct === 5 ? 'success' : 'warning'">разметка: {{ trial.result.attempt.correct }}/5</span>
+              <span v-if="trial.result && !trial.result.checked" class="chip" data-tone="neutral">свой текст — без разметки</span>
+            </div>
+            <div v-if="!trial.result && !trial.error" class="empty">Здесь появится разбор: пять полей, ответ модели как есть и время.</div>
+            <p v-if="trial.error" class="error-text">{{ trial.error }}</p>
+            <template v-if="trial.result">
+              <table v-if="trial.result.attempt.valid" class="fields-table">
+                <tr v-for="f in FIELDS" :key="f">
+                  <td>{{ f }}</td>
+                  <td><span class="val" :class="trial.result.checked ? (trial.result.attempt.fields[f].ok ? 'ok' : 'bad') : ''">{{ show(trial.result.attempt.fields[f]) }}
+                    <span v-if="trial.result.checked && !trial.result.attempt.fields[f].ok" class="exp">→ по разметке {{ fmt(trial.result.attempt.fields[f].expected) }}</span></span></td>
+                </tr>
+              </table>
+              <p v-else class="error-text">{{ trial.result.attempt.error }}</p>
+              <div class="row" style="flex-wrap:wrap; gap:6px 18px">
+                <div class="fact"><b>{{ secs(trial.result.attempt.wallMs) }}</b>весь запрос</div>
+                <div class="fact"><b>{{ num(trial.result.attempt.promptTokens) }} → {{ num(trial.result.attempt.answerTokens) }}</b>токены</div>
+                <div v-if="trial.result.attempt.cachedTokens" class="fact"><b>{{ num(trial.result.attempt.cachedTokens) }}</b>из кэша</div>
+                <div class="fact"><b>{{ rate(tps(trial.result.attempt)) }}</b>генерация</div>
+                <div v-if="trial.result.loadMs > 300" class="fact"><b>{{ secs(trial.result.loadMs) }}</b>загрузка модели</div>
+              </div>
+              <details class="fold" open><summary>Ответ модели как есть</summary><pre class="mono-box">{{ trial.result.attempt.output }}</pre></details>
+              <details class="fold"><summary>Что ушло в Ollama · POST /api/chat</summary><pre class="mono-box">{{ pretty(trial.result.request) }}</pre></details>
+            </template>
+          </article>
+        </div>
+      </section>
+    </div>
+
+    <!-- Журнал -->
+    <section v-else class="stack stack-md">
+      <div class="row" style="gap:12px; flex-wrap:wrap">
+        <span class="t-label-sm t-muted">Набор</span>
+        <div class="tabs" role="radiogroup" aria-label="Набор журнала">
+          <button v-for="s in SETS" :key="s.id" class="tab" role="radio" :aria-checked="journal.set === s.id" :aria-selected="journal.set === s.id"
+                  @click="journal.set = s.id; pickDefaults()">{{ s.label }}</button>
+        </div>
+        <span class="t-body-sm t-muted">Сравниваются только прогоны на одном и том же наборе обращений.</span>
+      </div>
+
+      <div v-if="!journalRows.length" class="card empty">На этом наборе прогонов ещё нет. Запустите прогон на вкладке «Прогон по набору».</div>
+      <template v-else>
+        <div class="journal-top">
+          <article class="card chart-card">
+            <div class="row-between"><span class="t-label-sm">Качество и время</span><span class="t-body-sm t-muted">точка — прогон</span></div>
+            <div class="chart-wrap" @mouseleave="journal.hover = null">
+              <!-- viewBox статический: в шаблоне прямо в HTML браузер приводит :viewBox к нижнему регистру, и SVG его не видит -->
+              <svg viewBox="0 0 600 380" role="img" aria-label="Поля верно в зависимости от времени на обращение">
+                <g v-for="y in chart.yTicks" :key="'y' + y">
+                  <line class="grid-line" :x1="CH.l" :x2="CH.w - CH.r" :y1="chart.y(y)" :y2="chart.y(y)"/>
+                  <text class="tick" :x="CH.l - 8" :y="chart.y(y) + 3.5" text-anchor="end">{{ y }}%</text>
+                </g>
+                <g v-for="x in chart.xTicks" :key="'x' + x">
+                  <text class="tick" :x="chart.x(x)" :y="CH.h - CH.b + 16" text-anchor="middle">{{ String(x).replace('.', ',') }} с</text>
+                </g>
+                <text class="axis-label" :x="CH.w - CH.r" :y="CH.h - 4" text-anchor="end">время на обращение, медиана →</text>
+                <text class="axis-label" :x="CH.l" :y="10">↑ поля верно</text>
+                <g v-for="p in chart.points" :key="p.id">
+                  <circle class="point" :class="{ sel: p.id === journal.a || p.id === journal.b }" :cx="p.cx" :cy="p.cy" :r="p.id === journal.a || p.id === journal.b ? 6 : 5"/>
+                  <text v-if="p.id === journal.a || p.id === journal.b" class="point-label" :x="p.cx + (p.right ? -10 : 10)" :y="p.cy + (p.id === journal.a ? 18 : -10)"
+                        :text-anchor="p.right ? 'end' : 'start'">{{ p.id === journal.a ? 'A' : 'B' }} · {{ short(p.name) }}</text>
+                  <circle class="hit" :cx="p.cx" :cy="p.cy" r="13" @mouseenter="journal.hover = p" @click="pickB(p.id)"/>
+                </g>
+              </svg>
+              <div v-if="journal.hover" class="tooltip" :style="{ left: journal.hover.cx / CH.w * 100 + '%', top: journal.hover.cy / CH.h * 100 + '%' }">
+                <b>{{ journal.hover.name }}</b>
+                <span>{{ journal.hover.quality }}% полей · {{ secs(journal.hover.ms) }} · {{ gb(journal.hover.memory) }}</span>
+              </div>
+            </div>
+            <span class="t-body-sm t-muted">Чёрные точки — выбранные A и B. Клик по точке делает её B. Выше и левее — лучше.</span>
+          </article>
+
+          <article class="card compare-card">
+            <div class="row-between"><span class="t-label-sm">Сравнение A и B</span>
+              <span class="t-body-sm t-muted">A и B выбираются в таблице ниже</span></div>
+            <div v-if="cmp" style="overflow-x:auto"><table class="compare-table">
+              <thead><tr><th></th><th><span class="ab on">A</span></th><th><span class="ab on">B</span></th><th>B − A</th></tr></thead>
+              <tbody>
+                <tr><td>Конфигурация</td><td style="font-family:var(--font-body)">{{ short(cmp.a.name) }}</td><td style="font-family:var(--font-body)">{{ short(cmp.b.name) }}</td><td></td></tr>
+                <tr v-for="m in cmpRows" :key="m.label">
+                  <td>{{ m.label }}</td><td>{{ m.fa }}</td><td>{{ m.fb }}</td>
+                  <td><span class="delta" :class="m.cls">{{ m.delta }}</span></td>
+                </tr>
+              </tbody>
+            </table></div>
+            <div v-if="cmp && diffs.length" class="stack stack-sm">
+              <span class="t-label-sm t-muted">Где ответы разошлись · {{ diffs.length }} <span style="text-transform:none; letter-spacing:0">— поле: ответ A → ответ B, ✓/✗ у B</span></span>
+              <div class="diff-list">
+                <div v-for="d in diffs" :key="d.id" class="diff">
+                  <span class="rid">{{ d.id }}</span>
+                  <span class="text" :title="d.text">{{ d.text }}</span>
+                  <span class="vals">
+                    <span v-for="f in d.fields" :key="f.name" class="val" :class="f.b.ok ? 'ok' : 'bad'" :title="'A: ' + show(f.a) + ' · по разметке ' + fmt(f.a.expected)">{{ f.name }}: {{ show(f.a) }} → {{ show(f.b) }}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="card table-card">
+          <div class="table-scroll" style="max-height:none">
+            <table class="results journal-table">
+              <thead><tr>
+                <th>A / B</th><th>Прогон</th><th>Модель</th><th class="num">Поля</th><th class="num">Целиком</th><th class="num">JSON</th>
+                <th class="num">Медиана</th><th class="num">Генерация</th><th class="num">Ответ</th><th class="num">Память</th><th class="num">Окно</th><th class="num">Загрузка</th><th></th>
+              </tr></thead>
+              <tbody>
+                <tr v-for="e in journalRows" :key="e.id">
+                  <td><button class="pick" :class="{ on: journal.a === e.id }" @click="journal.a = e.id">A</button>
+                      <button class="pick" :class="{ on: journal.b === e.id }" @click="journal.b = e.id">B</button></td>
+                  <td class="jname">{{ e.name }}<br><span class="t-mono-sm t-muted" style="font-size:.7rem">{{ time(e.createdAt) }}{{ e.repeats > 1 ? ' · ×' + e.repeats : '' }}</span></td>
+                  <td><span class="t-mono-sm">{{ e.config.model }}</span><br><span class="t-muted" style="font-size:.7rem">{{ e.resources.quantization }}</span></td>
+                  <td class="num">{{ pct(e.summary.fieldsCorrect, e.summary.fieldsTotal) }}</td>
+                  <td class="num">{{ e.summary.exact }}/{{ e.summary.attempts }}</td>
+                  <td class="num">{{ e.summary.validJson }}/{{ e.summary.attempts }}</td>
+                  <td class="num">{{ secs(e.summary.latencyMedianMs) }}</td>
+                  <td class="num">{{ rate(e.summary.generationTps) }}</td>
+                  <td class="num">{{ num(e.summary.answerTokens) }} ток.</td>
+                  <td class="num">{{ gb(e.resources.memoryBytes) }}</td>
+                  <td class="num">{{ num(e.resources.contextLength) }}</td>
+                  <td class="num">{{ secs(e.resources.loadMs) }}</td>
+                  <td><button class="icon-btn" title="Удалить прогон" @click="removeExperiment(e)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS.trash"></svg></button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </template>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, ref, reactive, computed, watch, onMounted } = Vue;
+
+// Иконки Lucide (stroke 1.75): play, square, hammer, trash-2.
+const ICONS = {
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  stop: '<rect width="14" height="14" x="5" y="5" rx="2"/>',
+  hammer: '<path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+};
+const FIELDS = ['category', 'action', 'urgency', 'order_id', 'amount'];
+const SETS = [{ id: 'tune', label: 'Настройка' }, { id: 'check', label: 'Контроль' }, { id: 'all', label: 'Все' }];
+// fallback — значение Ollama, если в Modelfile модели параметра нет. Окно 32 768 Ollama 0.34 выбрала на этой машине сама.
+const PARAMS = [
+  { key: 'temperature', fallback: 'Ollama: 0,8', int: false },
+  { key: 'top_p', fallback: 'Ollama: 0,9', int: false },
+  { key: 'num_ctx', fallback: 'Ollama: 32 768', int: true },
+  { key: 'num_predict', fallback: 'без предела', int: true },
+];
+const TRY_EXAMPLES = ['c13', 'c15', 'c16', 't01', 'c11', 't19'];
+const CH = { w: 600, h: 380, l: 44, r: 16, t: 18, b: 34 };  // h совпадает с viewBox в разметке
+const STORAGE_KEY = 'day29-lab';
+
+createApp({
+  setup() {
+    const tab = ref('run');
+    const models = ref([]);
+    const status = ref(null);
+    const statusError = ref('');
+    const task = ref({ tickets: [], shots: [], presets: [] });
+    const presetId = ref('baseline');
+    const config = reactive({ model: '', system: '', fewShot: false, schema: false, think: false,
+      options: { temperature: '', top_p: '', num_ctx: '', num_predict: '' } });
+    const tallPrompt = ref(false);
+    const run = reactive({ set: 'check', repeats: 1, name: '', running: false, phase: '', total: 0, attempts: [], resources: null, summary: null, error: '' });
+    const expanded = ref(null);
+    const trial = reactive({ text: '', ticketId: null, running: false, result: null, error: '' });
+    const journal = reactive({ list: [], set: 'check', a: null, b: null, hover: null, full: {} });
+    const build = reactive({ name: 'triage:3b', running: false, result: null, error: '' });
+    const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+    let controller = null;
+
+    const presets = computed(() => task.value.presets);
+    const shots = computed(() => task.value.shots);
+    const preset = computed(() => presets.value.find(p => p.id === presetId.value));
+    const modelInfo = computed(() => models.value.find(m => m.name === config.model));
+    const placeholder = p => {
+      const own = modelInfo.value?.defaults?.[p.key];
+      return own != null ? `модель: ${own.replace('.', ',')}` : p.fallback;
+    };
+
+    // ---------- конфигурация ----------
+    function optionsFrom(source) {
+      return Object.fromEntries(PARAMS.map(p => [p.key, source[p.key] == null ? '' : String(source[p.key])]));
+    }
+    function applyPreset(p) {
+      presetId.value = p.id;
+      Object.assign(config, { system: p.system, fewShot: p.fewShot, schema: p.schema, think: false });
+      config.options = optionsFrom(p.options);
+    }
+    function parsedOptions() {
+      const out = {};
+      for (const p of PARAMS) {
+        const raw = String(config.options[p.key] ?? '').replace(',', '.').replace(/\s/g, '');
+        if (raw === '') continue;
+        const value = p.int ? parseInt(raw, 10) : parseFloat(raw);
+        if (!Number.isNaN(value)) out[p.key] = value;
+      }
+      return out;
+    }
+    function payloadConfig() {
+      return { model: config.model, system: config.system, fewShot: config.fewShot, schema: config.schema,
+               options: parsedOptions(), think: modelInfo.value?.thinking ? config.think : null };
+    }
+    const modified = computed(() => {
+      const p = preset.value;
+      if (!p) return false;
+      const sameOptions = JSON.stringify(parsedOptions()) === JSON.stringify(Object.fromEntries(PARAMS.filter(x => p.options[x.key] != null).map(x => [x.key, p.options[x.key]])));
+      return config.system !== p.system || config.fewShot !== p.fewShot || config.schema !== p.schema || !sameOptions;
+    });
+    const defaultName = computed(() => `${preset.value?.label ?? ''}${modified.value ? ' (изменён)' : ''} · ${config.model}`);
+
+    const preview = computed(() => {
+      const c = payloadConfig();
+      const messages = [];
+      if (c.system.trim()) messages.push({ role: 'system', content: c.system.length > 90 ? c.system.slice(0, 90) + '…' : c.system });
+      if (c.fewShot) messages.push(`… ${shots.value.length} пары примеров: user → assistant …`);
+      messages.push({ role: 'user', content: '<текст обращения>' });
+      const body = { model: c.model, messages };
+      if (c.schema) body.format = '<JSON-схема: 5 полей, enum у category, action, urgency>';
+      if (Object.keys(c.options).length) body.options = c.options;
+      if (c.think != null) body.think = c.think;
+      body.stream = false;
+      return JSON.stringify(body, null, 2);
+    });
+
+    // ---------- загрузка ----------
+    async function api(path, init) {
+      const response = await fetch(path, init);
+      const body = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
+      if (!response.ok) throw new Error(body.message || `HTTP ${response.status}`);
+      return body;
+    }
+    async function loadStatus() {
+      try { status.value = await api('/api/status'); statusError.value = ''; }
+      catch (e) { statusError.value = e instanceof TypeError ? `Сервис не ответил: ${e.message}` : e.message; }
+    }
+    async function loadModels() {
+      try { models.value = await api('/api/models'); } catch { /* причина видна в шапке */ }
+    }
+    async function loadJournal() {
+      try { journal.list = await api('/api/experiments'); pickDefaults(); } catch { /* пусто */ }
+    }
+
+    // ---------- прогон ----------
+    const setTickets = computed(() => run.set === 'all' ? task.value.tickets : task.value.tickets.filter(t => t.set === run.set));
+    const setSize = id => id === 'all' ? task.value.tickets.length : task.value.tickets.filter(t => t.set === id).length;
+    const byTicket = computed(() => {
+      const map = {};
+      for (const a of run.attempts) (map[a.ticketId] ||= []).push(a);
+      return map;
+    });
+    const first = id => byTicket.value[id]?.[0];
+    const currentId = computed(() => {
+      const done = run.attempts.length % Math.max(setTickets.value.length, 1);
+      return setTickets.value[done]?.id;
+    });
+    const progressPct = computed(() => run.total ? Math.round(run.attempts.length / run.total * 100) : 0);
+
+    function selectSet(id) {
+      run.set = id;
+      run.attempts = []; run.summary = null; run.resources = null; run.phase = ''; run.error = '';
+    }
+
+    // Пока идёт прогон, сводка считается здесь же; по окончании её заменяет сводка сервера.
+    const live = computed(() => {
+      if (run.summary) return run.summary;
+      const list = run.attempts;
+      if (!list.length) return null;
+      const perField = Object.fromEntries(FIELDS.map(f => [f, list.filter(a => a.fields[f]?.ok).length]));
+      const walls = list.map(a => a.wallMs).sort((x, y) => x - y);
+      const at = p => walls[Math.ceil((walls.length - 1) * p)];
+      const med = values => { const v = values.filter(x => x != null).sort((x, y) => x - y); return v.length ? v[Math.floor(v.length / 2)] : null; };
+      return {
+        attempts: list.length, fieldsCorrect: Object.values(perField).reduce((s, v) => s + v, 0), fieldsTotal: list.length * FIELDS.length,
+        perField, exact: list.filter(a => a.correct === 5).length, validJson: list.filter(a => a.valid).length, stable: null,
+        tickets: new Set(list.map(a => a.ticketId)).size, latencyMedianMs: at(0.5), latencyP90Ms: at(0.9),
+        generationTps: med(list.map(tps)), promptTokens: med(list.map(a => a.promptTokens)), cachedTokens: med(list.map(a => a.cachedTokens)),
+        answerTokens: med(list.map(a => a.answerTokens)), truncated: list.filter(a => a.doneReason === 'length').length,
+      };
+    });
+
+    async function startRun() {
+      if (run.running) return;
+      Object.assign(run, { running: true, phase: 'Выгружаю и заново загружаю модель с этими параметрами…', attempts: [], summary: null, resources: null, error: '', total: 0 });
+      expanded.value = null;
+      controller = new AbortController();
+      try {
+        const response = await fetch('/api/run', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+          body: JSON.stringify({ name: run.name.trim() || defaultName.value, set: run.set, repeats: run.repeats, config: payloadConfig() }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
+          throw new Error(body.message || `HTTP ${response.status}`);
+        }
+        await readEvents(response, event => {
+          if (event.type === 'start') run.total = event.total;
+          else if (event.type === 'loaded') { run.resources = event.resources; run.phase = `Модель загружена за ${secs(event.resources.loadMs)}. Разбираю обращения…`; loadStatus(); }
+          else if (event.type === 'item') { run.attempts.push(event.attempt); run.phase = `Обращение ${run.attempts.length} из ${run.total}`; }
+          else if (event.type === 'done') {
+            run.summary = event.experiment.summary;
+            run.phase = `Готово за ${secs(event.experiment.summary.totalMs)} · прогон «${event.experiment.name}» записан в журнал`;
+          } else if (event.type === 'error') { run.error = event.message; run.phase = ''; }
+        });
+        if (!run.summary && !run.error) run.error = 'Стрим оборвался без результата';
+      } catch (e) {
+        if (e.name === 'AbortError') run.phase = `Остановлено на ${run.attempts.length} из ${run.total}. Неполный прогон в журнал не пишется.`;
+        else run.error = e instanceof TypeError ? `Сервис не ответил: ${e.message}` : e.message;
+      } finally {
+        run.running = false;
+        loadStatus();
+        loadJournal();
+      }
+    }
+    function stopRun() { controller?.abort(); }
+
+    async function readEvents(response, onEvent) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let newline;
+        while ((newline = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          if (line.trim()) onEvent(JSON.parse(line));
+        }
+      }
+    }
+
+    // ---------- свой текст ----------
+    const ticket = id => task.value.tickets.find(t => t.id === id);
+    function useTicket(id) { const t = ticket(id); if (t) { trial.text = t.text; trial.ticketId = t.id; } }
+    function useRandom() { const list = task.value.tickets; useTicket(list[Math.floor(Math.random() * list.length)].id); }
+    async function tryOne() {
+      if (trial.running || !trial.text.trim() || !config.model) return;
+      trial.running = true; trial.error = '';
+      try {
+        trial.result = await api('/api/try', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: payloadConfig(), text: trial.text, ticketId: trial.ticketId }) });
+      } catch (e) {
+        trial.result = null;
+        trial.error = e instanceof TypeError ? `Сервис не ответил: ${e.message}` : e.message;
+      } finally {
+        trial.running = false;
+        loadStatus();
+      }
+    }
+
+    // ---------- сборка модели ----------
+    async function buildModel() {
+      build.running = true; build.error = ''; build.result = null;
+      try {
+        build.result = await api('/api/build', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: build.name, config: payloadConfig() }) });
+        await loadModels();
+      } catch (e) {
+        build.error = e.message;
+      } finally {
+        build.running = false;
+      }
+    }
+    function useBuilt() {
+      const built = presets.value.find(p => p.id === 'built');
+      const name = build.result.name;
+      config.model = models.value.find(m => m.name === name || m.name === name + ':latest')?.name ?? name;
+      if (built) applyPreset(built);
+    }
+
+    // ---------- журнал ----------
+    const journalRows = computed(() => journal.list.filter(e => e.set === journal.set));
+    function pickDefaults() {
+      const ids = journalRows.value.map(e => e.id);
+      if (!ids.includes(journal.a)) journal.a = ids[0] ?? null;
+      if (!ids.includes(journal.b)) journal.b = ids[ids.length - 1] ?? null;
+    }
+    function openJournal() { tab.value = 'journal'; loadJournal(); }
+    function pickB(id) { if (id !== journal.a) journal.b = id; }
+    async function fetchFull(id) {
+      if (!id || journal.full[id]) return;
+      try { journal.full[id] = await api(`/api/experiments/${id}`); } catch { /* удалён */ }
+    }
+    watch(() => [journal.a, journal.b], ([a, b]) => { fetchFull(a); fetchFull(b); });
+    async function removeExperiment(e) {
+      if (!confirm(`Удалить прогон «${e.name}»?`)) return;
+      await fetch(`/api/experiments/${e.id}`, { method: 'DELETE' });
+      await loadJournal();
+    }
+
+    const chart = computed(() => {
+      const rows = journalRows.value;
+      const maxMs = Math.max(1000, ...rows.map(e => e.summary.latencyMedianMs));
+      const step = maxMs <= 2000 ? 0.5 : maxMs <= 5000 ? 1 : maxMs <= 12000 ? 2 : 5;
+      const xMax = Math.ceil(maxMs / 1000 / step) * step + (maxMs / 1000 % step === 0 ? step : 0);
+      const x = s => CH.l + s / xMax * (CH.w - CH.l - CH.r);
+      const y = q => CH.t + (100 - q) / 100 * (CH.h - CH.t - CH.b);
+      const xTicks = [];
+      for (let v = 0; v <= xMax + 1e-9; v += step) xTicks.push(Math.round(v * 10) / 10);
+      const points = rows.map(e => {
+        const quality = Math.round(e.summary.fieldsCorrect / e.summary.fieldsTotal * 100);
+        const cx = x(e.summary.latencyMedianMs / 1000);
+        return { id: e.id, name: e.name, quality, ms: e.summary.latencyMedianMs, memory: e.resources.memoryBytes, cx, cy: y(quality), right: cx > CH.w * 0.6 };
+      });
+      return { x, y, xTicks, yTicks: [0, 25, 50, 75, 100], points };
+    });
+
+    const cmp = computed(() => {
+      const a = journal.full[journal.a], b = journal.full[journal.b];
+      return a && b ? { a, b } : null;
+    });
+    const cmpRows = computed(() => {
+      if (!cmp.value) return [];
+      const { a, b } = cmp.value;
+      const sa = a.summary, sb = b.summary, ra = a.resources, rb = b.resources;
+      const q = s => s.fieldsCorrect / s.fieldsTotal * 100;
+      // eps — разница, которую не считаем изменением: 1 ток/с или 10 мс — шум замера, а не эффект настройки.
+      const row = (label, va, vb, format, better, deltaFormat, eps) => {
+        const d = va == null || vb == null ? null : vb - va;
+        if (d == null) return { label, fa: format(va), fb: format(vb), delta: '', cls: '' };
+        if (Math.abs(d) < eps) return { label, fa: format(va), fb: format(vb), delta: '≈', cls: '' };
+        const cls = better === 'none' ? '' : (better === 'up' ? d > 0 : d < 0) ? 'better' : 'worse';
+        return { label, fa: format(va), fb: format(vb), delta: (d > 0 ? '+' : '−') + deltaFormat(Math.abs(d)), cls };
+      };
+      return [
+        row('Поля верно', q(sa), q(sb), v => Math.round(v) + '%', 'up', v => Math.round(v) + ' п.п.', 0.5),
+        row('Целиком верно', sa.exact, sb.exact, v => `${v}/${sa.attempts}`, 'up', v => String(v), 0.5),
+        row('Валидный JSON', sa.validJson, sb.validJson, v => `${v}/${sa.attempts}`, 'up', v => String(v), 0.5),
+        row('Время, медиана', sa.latencyMedianMs, sb.latencyMedianMs, secs, 'down', secs, 10),
+        row('Ответ, токенов', sa.answerTokens, sb.answerTokens, num, 'down', num, 0.5),
+        row('Генерация', sa.generationTps, sb.generationTps, rate, 'up', v => Math.round(v) + ' ток/с', 1),
+        row('Память модели', ra.memoryBytes, rb.memoryBytes, gb, 'down', gb, 5e7),
+        row('Окно контекста', ra.contextLength, rb.contextLength, num, 'none', num, 0.5),
+        row('Загрузка', ra.loadMs, rb.loadMs, secs, 'down', secs, 50),
+        row('Файл модели', ra.fileBytes, rb.fileBytes, gb, 'down', gb, 5e7),
+      ];
+    });
+    // Обращения, где прогоны ответили по-разному: сравнивается первый повтор.
+    const diffs = computed(() => {
+      if (!cmp.value) return [];
+      const firstOf = exp => Object.fromEntries(exp.attempts.filter(x => x.repeat === 1).map(x => [x.ticketId, x]));
+      const fa = firstOf(cmp.value.a), fb = firstOf(cmp.value.b);
+      const out = [];
+      for (const id of Object.keys(fa)) {
+        const x = fa[id], y = fb[id];
+        if (!y) continue;
+        const fields = FIELDS.filter(f => x.fields[f].ok !== y.fields[f].ok).map(f => ({ name: f, a: x.fields[f], b: y.fields[f] }));
+        if (fields.length) out.push({ id, text: ticket(id)?.text ?? '', fields });
+      }
+      return out;
+    });
+
+    // ---------- форматирование ----------
+    const num = v => v == null ? '—' : Number(v).toLocaleString('ru-RU');
+    const rate = v => v == null ? '—' : `${Math.round(v)} ток/с`;
+    const gb = v => v == null ? '—' : `${(v / 1e9).toFixed(1).replace('.', ',')}\u00a0ГБ`;
+    const pct = (a, b) => b ? `${Math.round(a / b * 100)}%` : '—';
+    function secs(ms) {
+      if (ms == null || Number.isNaN(ms)) return '—';
+      if (ms < 10000) return `${(ms / 1000).toFixed(2).replace('.', ',')}\u00a0с`;
+      return `${(ms / 1000).toFixed(1).replace('.', ',')}\u00a0с`;
+    }
+    const tps = a => a.answerTokens && a.generationMs ? a.answerTokens * 1000 / a.generationMs : null;
+    const fmt = v => v == null ? 'null' : String(v);
+    function show(check) {
+      if (!check) return '—';
+      if (!check.present) return 'нет поля';
+      const v = check.actual;
+      if (v == null) return 'null';
+      if (v === '') return '""';
+      return typeof v === 'string' ? v : JSON.stringify(v);
+    }
+    const pretty = v => { try { return JSON.stringify(typeof v === 'string' ? JSON.parse(v) : v, null, 2); } catch { return v; } };
+    const time = iso => new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const short = s => s.length > 30 ? s.slice(0, 29) + '…' : s;
+
+    // Конфигурация и выбранный набор переживают перезагрузку страницы — только в этом браузере.
+    function restore() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+        if (!saved) return false;
+        presetId.value = saved.presetId ?? presetId.value;
+        Object.assign(config, saved.config ?? {});
+        run.set = saved.set ?? run.set;
+        return true;
+      } catch { return false; }
+    }
+    watch([presetId, config, () => run.set], () => {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ presetId: presetId.value, config, set: run.set })); } catch { /* приватный режим */ }
+    }, { deep: true });
+
+    onMounted(async () => {
+      loadStatus();
+      try { task.value = await api('/api/task'); } catch (e) { run.error = e.message; }
+      await loadModels();
+      if (!restore()) {
+        const base = presets.value.find(p => p.id === 'baseline');
+        if (base) applyPreset(base);
+      }
+      if (!models.value.some(m => m.name === config.model)) {
+        config.model = models.value.find(m => m.name === 'llama3.2:3b')?.name ?? models.value[0]?.name ?? '';
+      }
+      loadJournal();
+    });
+
+    return { ICONS, FIELDS, SETS, PARAMS, placeholder, TRY_EXAMPLES, CH, tab, models, status, statusError, presets, shots, preset, presetId, config, tallPrompt,
+      modelInfo, modified, defaultName, preview, applyPreset, run, expanded, setTickets, setSize, byTicket, first, currentId, progressPct, selectSet,
+      live, startRun, stopRun, trial, ticket, useTicket, useRandom, tryOne, build, buildModel, useBuilt, journal, journalRows, pickDefaults,
+      openJournal, pickB, removeExperiment, chart, cmp, cmpRows, diffs, mac, num, rate, gb, pct, secs, tps, fmt, show, pretty, time, short };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

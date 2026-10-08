@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: day29-lab
+  threads:
+    virtual:
+      enabled: true
+  mvc:
+    async:
+      # Прогон идёт стримом: 40 обращений × 3 повтора на 9B-модели — минут десять.
+      request-timeout: 30m
+
+ollama:
+  base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+  # Один ответ модели. Холодная загрузка fp16 с диска и длинный ответ без num_predict укладываются с запасом.
+  timeout: 300s
+
+lab:
+  experiments-dir: data/experiments
+
+server:
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${PORT:8300}

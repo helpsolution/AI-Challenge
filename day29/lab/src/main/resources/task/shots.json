@@ -1,0 +1,10 @@
+[
+  {"text": "Здравствуйте, заказ 5512093 должны были привезти вчера, но курьер так и не приехал. Подскажите, когда ждать?",
+   "answer": {"category": "delivery", "action": "track", "urgency": "medium", "order_id": "5512093", "amount": null}},
+  {"text": "Списали 2 380 ₽ два раза за один заказ №ZK-7710452!!! Верните деньги, иначе пишу в банк",
+   "answer": {"category": "payment", "action": "refund", "urgency": "high", "order_id": "ZK-7710452", "amount": 2380}},
+  {"text": "Есть ли у пылесоса Vortex X5 насадка для шерсти? Хочу купить, но не нашёл в характеристиках",
+   "answer": {"category": "product", "action": "info", "urgency": "low", "order_id": null, "amount": null}},
+  {"text": "Не могу войти в личный кабинет, код по смс не приходит на номер +7 905 331-20-48",
+   "answer": {"category": "account", "action": "fix", "urgency": "medium", "order_id": null, "amount": null}}
+]
