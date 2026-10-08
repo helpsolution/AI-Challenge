@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Локальный RAG — день 28</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  body { background: #fff; }
+  .nav { position: sticky; top: 0; z-index: 3; min-height: 64px; }
+  .page { max-width: 1320px; margin-inline: auto; padding: 24px 24px 0; }
+  .feed { padding-bottom: var(--space-6); }
+
+  .welcome { min-height: 52vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 24px 0; }
+  .welcome-mark { width: 46px; height: 46px; display: grid; place-items: center; color: var(--color-primary); background: var(--color-primary-soft); border-radius: 14px; font-size: 24px; font-weight: 600; }
+  .welcome h1 { font-size: clamp(24px, 3vw, 32px); margin: 20px 0 12px; font-weight: 600; letter-spacing: -.8px; }
+  .welcome p { font-size: 15px; line-height: 1.7; color: var(--color-text-secondary); margin: 0 0 24px; max-width: 680px; }
+  .welcome-models { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 24px; }
+  .suggestions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; max-width: 680px; }
+  .suggestion { background: #fff; padding: 16px 18px; text-align: left; border: 1px solid var(--color-border); border-radius: 12px; font: inherit; font-size: 13px; cursor: pointer; display: flex; gap: 20px; justify-content: space-between; }
+  .suggestion:hover { background: #f6f7fb; border-color: var(--color-primary); }
+  .suggestion span { color: var(--color-text-muted); }
+
+  .question { align-self: flex-end; max-width: 70%; padding: var(--space-3) var(--space-4); background: #f1f3f8;
+              border-radius: 20px 20px 4px 20px; white-space: pre-wrap; }
+
+  .retrieval { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 14px;
+               border: 1px dashed var(--color-border-strong); border-radius: 12px; font-size: 12.5px; color: var(--color-text-secondary); }
+  .retrieval b { color: var(--color-text-primary); font-weight: 600; font-family: var(--font-mono); font-size: 12px; }
+  .retrieval .local-mark { color: var(--color-success); font-weight: 600; }
+  .retrieval details { width: 100%; }
+  .retrieval summary { cursor: pointer; color: var(--color-primary); }
+
+  .columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; align-items: start; }
+  .column { border: 1px solid var(--color-border); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: #fff; min-width: 0; }
+  .column[data-provider="cloud"] { background: #fbfcfe; }
+  .column-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .provider { font-size: 10px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
+  .provider[data-provider="local"] { color: var(--color-success); background: var(--color-success-soft); }
+  .provider[data-provider="cloud"] { color: var(--color-info); background: var(--color-info-soft); }
+  .model-name { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+  .main-mark { font-size: 11px; color: var(--color-text-muted); }
+  .column-head .chip { margin-left: auto; }
+
+  .waiting { display: flex; align-items: baseline; gap: 10px; color: var(--color-text-muted); font-size: 13px; padding: 18px 0; }
+  .timer { font-family: var(--font-mono); font-size: 26px; font-weight: 600; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+  .waiting.queued .timer { color: var(--color-text-muted); }
+
+  .answer-text { white-space: pre-wrap; color: var(--color-text-primary); line-height: 1.6; font-size: 14px; }
+  .reason { font-size: 12px; color: var(--color-text-secondary); line-height: 1.5; }
+  .reason[data-tone="danger"] { color: var(--color-danger); white-space: pre-wrap; }
+  .citation-link { display: inline; color: var(--color-primary); font: inherit; border: 0; padding: 0 2px; background: var(--color-primary-soft); border-radius: 4px; cursor: pointer; }
+
+  .block summary { cursor: pointer; font-size: 12px; color: var(--color-text-secondary); }
+  .quote-card { margin: 8px 0 0; padding: 8px 12px; border-left: 3px solid var(--color-success); background: var(--color-success-soft); border-radius: 0 8px 8px 0; line-height: 1.55; white-space: pre-wrap; font-size: 12.5px; }
+  .draft { margin: 8px 0 0; padding: 8px 12px; border-left: 3px solid var(--color-warning); background: var(--color-warning-soft); border-radius: 0 8px 8px 0; white-space: pre-wrap; font-size: 12.5px; line-height: 1.55; }
+
+  .speed { border-top: 1px solid var(--color-border); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .speed-total { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .speed-total .t-metric { font-size: 22px; }
+  .speed-track { height: 8px; border-radius: 999px; background: var(--color-elevated); overflow: hidden; display: flex; }
+  .speed-track span { display: block; height: 100%; }
+  .seg-load { background: #C3CAD6; }
+  .seg-prompt { background: var(--color-info); }
+  .seg-gen { background: var(--color-primary); }
+  .seg-cloud { background: var(--color-warning); }
+  .speed-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-family: var(--font-mono); font-size: 11.5px; color: var(--color-text-secondary); }
+  .speed-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: 0; }
+
+  .fragments { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .fragment { border: 1px solid var(--color-border); border-radius: 10px; background: #fff; }
+  .fragment summary { display: flex; gap: 10px; align-items: center; padding: 8px 12px; cursor: pointer; list-style: none; color: var(--color-text-primary); }
+  .fragment summary::-webkit-details-marker { display: none; }
+  .fragment-number { font-family: var(--font-mono); font-weight: 600; color: var(--color-info); }
+  .fragment-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fragment-body { padding: 0 12px 12px; white-space: pre-wrap; font-size: 12.5px; color: var(--color-text-secondary); line-height: 1.55; }
+
+  .composer { position: sticky; bottom: 0; padding: 12px 0 20px; background: linear-gradient(transparent, #fff 24px); }
+  .composer .card { padding: 14px 16px; gap: 10px; border-radius: 20px; box-shadow: 0 4px 24px rgba(20,30,70,.05); }
+  .composer .textarea { border: 0; padding: 6px 0; min-height: 48px; box-shadow: none; resize: vertical; }
+  .composer-hint { font-size: 12px; color: var(--color-text-muted); }
+  .trace-link { color: var(--color-primary); text-decoration: none; font-size: 12.5px; }
+  .trace-link:hover { text-decoration: underline; }
+  .nav-models { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  @media (max-width: 900px) { .nav-models { display: none; } }
+  @media (max-width: 640px) { .page { padding: 16px 16px 0; } .suggestions { grid-template-columns: 1fr; } .question { max-width: 100%; } }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="nav">
+    <div class="nav-brand">
+      <span class="nav-mark">L</span>
+      <span>Локальный RAG</span>
+      <span class="t-body-sm t-muted">день 28</span>
+    </div>
+    <nav class="tabs" aria-label="Разделы">
+      <a class="tab" href="/" aria-selected="true">Сравнение</a>
+      <a class="tab" href="/results.html">Замеры</a>
+      <a class="tab" href="/inside.html">Внутри агента</a>
+    </nav>
+    <div class="nav-spacer"></div>
+    <div class="nav-models">
+      <span v-for="m in models" :key="m.model" class="chip" :data-tone="modelTone(m)" :title="modelTitle(m)">
+        {{ m.provider === 'cloud' ? '☁' : '●' }} {{ m.model }}<template v-if="m.loaded"> · в памяти</template>
+      </span>
+    </div>
+    <span v-if="knowledge.chunks" class="chip" data-tone="info">{{ knowledge.documents }} док. · {{ knowledge.chunks }} фрагм.</span>
+    <span v-else-if="knowledgeLoaded" class="chip" data-tone="warning">База знаний не собрана</span>
+  </header>
+
+  <main class="page">
+    <section class="feed stack stack-lg" aria-live="polite">
+      <div v-if="!turns.length" class="welcome">
+        <div class="welcome-mark">L</div>
+        <h1>Один контекст — локальные модели и облако</h1>
+        <p>Поиск, реранкинг и переформулировка запроса работают на этом компьютере. Найденные фрагменты
+          получают все модели в одинаковом промпте, ответ принимается только с дословными цитатами.</p>
+        <div class="welcome-models">
+          <span v-for="m in models" :key="m.model" class="provider" :data-provider="m.provider">{{ providerLabel(m.provider) }} · {{ m.model }}</span>
+        </div>
+        <div class="suggestions">
+          <button v-for="example in examples" :key="example" @click="question = example" class="suggestion">{{ example }} <span>↗</span></button>
+        </div>
+      </div>
+
+      <div v-for="turn in turns" :key="turn.id" class="stack stack-md">
+        <div class="question">{{ turn.question }}</div>
+
+        <div v-if="turn.error" class="card card-accent" data-accent="danger">
+          <div class="row"><span class="chip" data-tone="danger">Ошибка</span></div>
+          <div class="reason" data-tone="danger">{{ turn.error }}</div>
+        </div>
+
+        <div v-if="!turn.retrieval && !turn.error" class="retrieval">Переформулирую запрос и ищу фрагменты на этом компьютере…</div>
+        <div v-if="turn.retrieval" class="retrieval">
+          <span class="local-mark">● Поиск локально</span>
+          <span>запрос <b>{{ rewriteLabel(turn.retrieval.rewriting) }}</b></span>
+          <span>{{ turn.retrieval.rewriting.model || mainModel }} <b>{{ sec(turn.retrieval.rewriting.durationMs) }}</b></span>
+          <span>эмбеддинг + косинус + BGE <b>{{ sec(turn.retrieval.retrievalMs - turn.retrieval.rewriting.durationMs) }}</b></span>
+          <span>порог прошли <b>{{ turn.retrieval.relevance.passed }} из {{ turn.retrieval.relevance.topK }}</b></span>
+          <span>лучший BGE <b>{{ fmt2(turn.retrieval.relevance.bestScore) }}</b></span>
+          <span v-for="w in turn.retrieval.warnings" :key="w" class="t-body-sm" style="color: var(--color-warning)">{{ w }}</span>
+          <details v-if="turn.retrieval.fragments.length" :id="'fragments-' + turn.id">
+            <summary>Фрагменты в промпте · {{ turn.retrieval.fragments.length }}<template v-if="turn.retrieval.rewriting.changed"> · поисковый запрос: «{{ turn.retrieval.rewriting.query }}»</template></summary>
+            <div class="fragments">
+              <details v-for="f in turn.retrieval.fragments" :key="f.chunkId" :id="'fragment-' + turn.id + '-' + f.number" class="fragment">
+                <summary>
+                  <span class="fragment-number">[{{ f.number }}]</span>
+                  <span class="fragment-title">{{ f.title }} · {{ f.section || 'Введение' }}</span>
+                  <span class="t-mono-sm t-muted">BGE {{ fmt2(f.rerankScore) }}</span>
+                </summary>
+                <div class="fragment-body">{{ f.text }}</div>
+              </details>
+            </div>
+          </details>
+        </div>
+
+        <div v-if="turn.retrieval" class="columns">
+          <article v-for="col in turn.columns" :key="col.model" class="column" :data-provider="col.provider">
+            <div class="column-head">
+              <span class="provider" :data-provider="col.provider">{{ providerLabel(col.provider) }}</span>
+              <span class="model-name">{{ col.model }}</span>
+              <span v-if="col.model === mainModel" class="main-mark">основная</span>
+              <span v-if="col.answer" class="chip" :data-tone="statusTone(col.answer.status)">{{ statusLabel(col.answer.status) }}</span>
+            </div>
+
+            <div v-if="!col.answer" class="waiting" :class="{ queued: !col.startedAt }">
+              <span class="timer">{{ col.startedAt ? sec(now - col.startedAt) : '—' }}</span>
+              <span>{{ col.startedAt ? 'генерирует ответ…' : 'ждёт GPU: локальные модели отвечают по очереди' }}</span>
+            </div>
+
+            <template v-else>
+              <div class="answer-text" v-if="col.answer.status !== 'failed'">
+                <template v-for="(part, i) in splitCitations(col.answer.answer)" :key="i">
+                  <button v-if="part.cite && col.answer.status === 'answered'" class="citation-link" @click="openFragment(turn.id, part.numbers[0])">{{ part.text }}</button>
+                  <template v-else>{{ part.text }}</template>
+                </template>
+              </div>
+              <div class="reason" :data-tone="col.answer.status === 'failed' ? 'danger' : null">{{ col.answer.reason }}</div>
+
+              <details v-if="col.answer.quotes.length" class="block" open>
+                <summary>Цитаты · {{ col.answer.quotes.length }}</summary>
+                <blockquote v-for="(q, i) in col.answer.quotes" :key="i" class="quote-card"><button class="citation-link" @click="openFragment(turn.id, q.number)">[{{ q.number }}]</button> «{{ q.text }}»</blockquote>
+              </details>
+              <details v-if="col.answer.draft" class="block">
+                <summary>Что написала модель — отклонено проверкой</summary>
+                <div class="draft">{{ col.answer.draft }}</div>
+              </details>
+
+              <div v-if="col.answer.llm" class="speed">
+                <div class="speed-total">
+                  <span class="t-metric">{{ sec(col.answer.llm.durationMs) }}</span>
+                  <span class="t-mono-sm t-muted">{{ num(col.answer.llm.promptTokens) }} → {{ num(col.answer.llm.completionTokens) }} ток.</span>
+                </div>
+                <div class="speed-track" :title="'Шкала общая для всех моделей этого вопроса'">
+                  <template v-for="seg in segments(col.answer.llm, turn)" :key="seg.cls"><span :class="seg.cls" :style="{ width: seg.width + '%' }"></span></template>
+                </div>
+                <div class="speed-legend">
+                  <template v-if="col.answer.llm.timings">
+                    <span><i class="seg-load"></i>загрузка {{ sec(col.answer.llm.timings.loadMs) }}</span>
+                    <span><i class="seg-prompt"></i>{{ promptLegend(col.answer.llm) }}</span>
+                    <span><i class="seg-gen"></i>генерация {{ sec(col.answer.llm.timings.generationMs) }} · {{ rate(col.answer.llm.completionTokens, col.answer.llm.timings.generationMs) }} ток/с</span>
+                  </template>
+                  <template v-else>
+                    <span><i class="seg-cloud"></i>весь запрос по сети · {{ rate(col.answer.llm.completionTokens, col.answer.llm.durationMs) }} ток/с сквозная</span>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </article>
+        </div>
+
+        <a v-if="turn.retrieval && turn.done" class="trace-link" :href="'/inside.html?trace=' + turn.retrieval.traceId">Путь вопроса по шагам: поиск, промпт, каждая модель →</a>
+      </div>
+    </section>
+
+    <form class="composer" @submit.prevent="ask">
+      <div class="card">
+        <textarea id="question" class="textarea" v-model="question" rows="2"
+                  placeholder="Вопрос по базе знаний. Enter — отправить, Shift+Enter — новая строка"
+                  @keydown.enter.exact.prevent="ask"></textarea>
+        <div class="row-between" style="flex-wrap: wrap; gap: 10px">
+          <span class="composer-hint">Ответ принимается только с дословными цитатами, иначе «не знаю». История диалога — по ответам основной модели.</span>
+          <div class="row" style="gap: 8px">
+            <button class="btn btn-tertiary" type="button" @click="newChat" :disabled="busy || !turns.length">Новый диалог</button>
+            <button class="btn btn-primary" type="submit" :disabled="busy || !question.trim()">
+              <svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                   stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>
+              </svg>
+              Спросить все модели
+            </button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, ref, computed, nextTick, onMounted } = Vue;
+
+createApp({
+  setup() {
+    const question = ref('');
+    const examples = ['Чем доступность отличается от надёжности?', 'Когда стоит писать ADR, а когда он лишний?', 'Что такое edge burst?', 'Какие уровни C4 используются?'];
+    const busy = ref(false);
+    const turns = ref([]);
+    const models = ref([]);
+    const knowledge = ref({});
+    const knowledgeLoaded = ref(false);
+    const now = ref(performance.now());
+    const mainModel = computed(() => models.value.find(m => m.provider === 'local')?.model);
+    let nextId = 1;
+    let ticker = null;
+
+    async function loadStatus() {
+      try {
+        const [k, m] = await Promise.all([fetch('/api/knowledge/status').then(r => r.json()), fetch('/api/models').then(r => r.json())]);
+        knowledge.value = k.meta || {};
+        models.value = m;
+      } catch (e) { console.error(e); }
+      finally { knowledgeLoaded.value = true; }
+    }
+
+    // История для переформулировки уточнений: вопросы и ответы основной (локальной) модели.
+    function history() {
+      return turns.value.filter(t => t.done && t.retrieval).slice(-3).flatMap(t => {
+        const main = t.columns.find(c => c.model === mainModel.value)?.answer;
+        return main ? [{role: 'user', content: t.question}, {role: 'assistant', content: main.answer.slice(0, 4000)}] : [];
+      });
+    }
+
+    async function ask() {
+      const text = question.value.trim();
+      if (!text || busy.value) return;
+      turns.value.push({ id: nextId++, question: text, retrieval: null, columns: [], error: '', done: false });
+      const turn = turns.value[turns.value.length - 1];
+      question.value = '';
+      busy.value = true;
+      ticker = setInterval(() => { now.value = performance.now(); }, 100);
+      scrollDown();
+      try {
+        const response = await fetch('/api/ask', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: text, history: history() }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
+          turn.error = body.message || `HTTP ${response.status}`;
+          return;
+        }
+        const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+        let buffer = '';
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += value;
+          let newline;
+          while ((newline = buffer.indexOf('\n')) >= 0) {
+            const line = buffer.slice(0, newline);
+            buffer = buffer.slice(newline + 1);
+            if (line.trim()) handle(turn, JSON.parse(line));
+          }
+        }
+        if (!turn.done && !turn.error) turn.error = 'Стрим оборвался до конца ответа';
+      } catch (e) {
+        turn.error = `Сервис не ответил: ${e.message}`;
+      } finally {
+        clearInterval(ticker);
+        busy.value = false;
+        loadStatus();
+      }
+    }
+
+    function handle(turn, event) {
+      const data = event.data;
+      if (event.type === 'retrieval') {
+        turn.retrieval = data;
+        turn.columns = data.models.map(m => ({ ...m, startedAt: null, answer: null }));
+        scrollDown();
+      } else if (event.type === 'started') {
+        const col = turn.columns.find(c => c.model === data.model);
+        if (col) col.startedAt = performance.now();
+      } else if (event.type === 'answer') {
+        const col = turn.columns.find(c => c.model === data.model);
+        if (col) col.answer = data;
+      } else if (event.type === 'done') {
+        turn.done = true;
+      } else if (event.type === 'error') {
+        turn.error = data.message;
+      }
+    }
+
+    // Шкала времени общая для всех колонок вопроса: полоса самой медленной модели — 100%.
+    function segments(llm, turn) {
+      const longest = Math.max(...turn.columns.map(c => c.answer?.llm?.durationMs || 0), 1);
+      const pct = ms => Math.max(0, ms) / longest * 100;
+      if (!llm.timings) return [{ cls: 'seg-cloud', width: pct(llm.durationMs) }];
+      const t = llm.timings;
+      return [{ cls: 'seg-load', width: pct(t.loadMs) }, { cls: 'seg-prompt', width: pct(t.promptMs) }, { cls: 'seg-gen', width: pct(t.generationMs) }];
+    }
+
+    function splitCitations(text) {
+      const parts = [];
+      const pattern = /\[(\d+(?:\s*[,;]\s*\d+)*)\]/g;
+      let last = 0;
+      for (const match of text.matchAll(pattern)) {
+        if (match.index > last) parts.push({ text: text.slice(last, match.index) });
+        parts.push({ text: match[0], cite: true, numbers: match[1].split(/[,;]/).map(n => Number(n.trim())) });
+        last = match.index + match[0].length;
+      }
+      if (last < text.length) parts.push({ text: text.slice(last) });
+      return parts;
+    }
+
+    function openFragment(turnId, number) {
+      const list = document.getElementById(`fragments-${turnId}`);
+      const element = document.getElementById(`fragment-${turnId}-${number}`);
+      if (list) list.open = true;
+      if (element) { element.open = true; element.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    }
+
+    function scrollDown() { nextTick(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })); }
+    function newChat() { if (!busy.value) { turns.value = []; nextTick(() => document.getElementById('question').focus()); } }
+    function sec(ms) { return ms == null ? '—' : (ms / 1000).toFixed(1).replace('.', ',') + ' с'; }
+    // Ollama переиспользует KV-кэш общего начала промпта; скорость считаем только по заново обработанным токенам.
+    function promptLegend(llm) {
+      const t = llm.timings, cached = t.cachedPromptTokens || 0, fresh = llm.promptTokens - cached;
+      const parts = [`промпт ${sec(t.promptMs)}`];
+      if (fresh >= 100) parts.push(`${rate(fresh, t.promptMs)} ток/с`);
+      if (cached) parts.push(`${num(cached)} ток. из кэша`);
+      return parts.join(' · ');
+    }
+    function fmt2(x) { return x.toFixed(2).replace('.', ','); }
+    function num(n) { return n == null ? '—' : n.toLocaleString('ru-RU'); }
+    function rate(tokens, ms) { return tokens && ms ? Math.round(tokens / ms * 1000) : '—'; }
+    function providerLabel(p) { return p === 'cloud' ? 'Облако' : 'Локально'; }
+    function rewriteLabel(r) { return { rewritten: 'переформулирован', unchanged: 'без изменений', disabled: 'как есть', fallback: 'резервный' }[r.status] || r.status; }
+    function statusLabel(s) { return { answered: 'Ответ с цитатами', weak_context: 'Не знаю · слабый контекст', no_answer: 'Не знаю · нет во фрагментах', unverified: 'Не знаю · цитаты не подтвердились', failed: 'Модель не ответила' }[s]; }
+    function statusTone(s) { return { answered: 'success', weak_context: 'neutral', no_answer: 'neutral', unverified: 'warning', failed: 'danger' }[s]; }
+    function modelTone(m) { return m.error || m.installed === false ? 'danger' : m.provider === 'cloud' ? 'info' : m.loaded ? 'success' : 'neutral'; }
+    function modelTitle(m) {
+      if (m.provider === 'cloud') return 'Облачная модель: генерация по сети, поиск всё равно локальный';
+      if (m.error) return m.error;
+      if (m.installed === false) return `Модель не скачана: ollama pull ${m.model}`;
+      return m.loaded ? `В памяти: ${(m.memoryMb / 1024).toFixed(1)} ГБ, контекст ${m.context}` : 'Скачана, загрузится при первом вопросе';
+    }
+
+    onMounted(loadStatus);
+
+    return { question, examples, busy, turns, models, knowledge, knowledgeLoaded, now, mainModel, ask, newChat, segments,
+      splitCitations, openFragment, sec, num, fmt2, rate, promptLegend, providerLabel, rewriteLabel, statusLabel, statusTone, modelTone, modelTitle };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>

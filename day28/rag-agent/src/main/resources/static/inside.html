@@ -1,0 +1,994 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Внутри агента — день 28</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  .model-switch { display: flex; flex-direction: column; gap: var(--space-3); }
+  .model-switch .tab { font-family: var(--font-mono); font-size: 13px; }
+
+  :root {
+    --viz-1: #2a78d6;
+    --viz-2: #eb6834;
+    --viz-3: #1baf7a;
+    --viz-4: #8a63d2;
+    --viz-5: #d9a227;
+    --viz-rest: #c9ced8;
+    --viz-grid: #e6e9ef;
+  }
+
+  .page { max-width: 1120px; margin-inline: auto; padding: var(--space-8) var(--space-6) var(--space-12); }
+  .heading { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+  .heading h1 { margin: var(--space-2) 0 0; }
+  .heading p { margin: var(--space-2) 0 0; max-width: 620px; }
+
+  .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: var(--space-4); align-items: end; }
+  .probe { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
+  .probe .input { flex: 1; min-width: 200px; }
+  .rag-toggle { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; white-space: nowrap; }
+
+
+  .pipeline { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-4); }
+  .stage { position: relative; text-align: left; font: inherit; color: inherit; cursor: pointer;
+           background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg);
+           padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: 6px; min-width: 0;
+           transition: border-color var(--motion-base) var(--easing-standard); }
+  .stage:hover { border-color: var(--color-border-strong); }
+  .stage:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+  .stage:not(:last-child):not(:nth-child(5n))::after { content: "→"; position: absolute; right: calc(-1 * var(--space-4) + 2px); top: 50%;
+           transform: translateY(-50%); color: var(--color-text-muted); font-size: 0.875rem; }
+  .stage[data-state="skipped"], .stage[data-state="pending"] { background: transparent; border-style: dashed; }
+  .stage[data-state="skipped"] .stage-title, .stage[data-state="pending"] .stage-title { color: var(--color-text-muted); }
+  .stage[data-state="failed"] { border-color: var(--color-danger); }
+  .stage-top { display: flex; align-items: center; gap: var(--space-2); }
+  .stage-number { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); }
+  .stage-title { font-weight: 600; font-size: 0.875rem; }
+  .stage-where { font-family: var(--font-mono); font-size: 0.6875rem; color: var(--color-text-muted);
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stage-value { font-size: 0.8125rem; color: var(--color-text-secondary); overflow-wrap: anywhere; }
+
+
+  .bar { display: flex; gap: 2px; height: 14px; border-radius: 4px; overflow: hidden; background: var(--color-surface); }
+  .bar span { min-width: 2px; }
+  .legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); }
+  .legend-item { display: inline-flex; align-items: center; gap: var(--space-2); font-size: 0.8125rem; color: var(--color-text-secondary); }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+  .legend-item b { font-family: var(--font-mono); font-weight: 500; color: var(--color-text-primary); }
+
+
+  .step { scroll-margin-top: var(--space-6); animation: appear 320ms var(--easing-standard) both; }
+  .step:nth-child(2) { animation-delay: 60ms; } .step:nth-child(3) { animation-delay: 120ms; }
+  .step:nth-child(4) { animation-delay: 180ms; } .step:nth-child(5) { animation-delay: 240ms; }
+  .step:nth-child(6) { animation-delay: 300ms; }
+  @keyframes appear { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .step { animation: none; } }
+  .step-head { display: flex; align-items: flex-start; gap: var(--space-3); }
+  .step-badge { width: 28px; height: 28px; flex-shrink: 0; border-radius: var(--radius-full); display: grid; place-items: center;
+                font-family: var(--font-mono); font-size: 0.8125rem; font-weight: 600;
+                background: var(--color-elevated); border: 1px solid var(--color-border-strong); color: var(--color-text-primary); }
+  .step-head .grow { flex: 1; min-width: 0; }
+  .step-head .card-title { margin: 2px 0 0; }
+  .step-where { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-text-muted); margin-top: 2px; }
+  .explain { margin: 0; color: var(--color-text-secondary); line-height: 1.6; max-width: 820px; }
+  .io { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+  .io > div { min-width: 0; }
+  .facts { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); }
+  .fact { display: flex; flex-direction: column; gap: 2px; }
+  .fact b { font-family: var(--font-mono); font-weight: 500; font-size: 0.9375rem; color: var(--color-text-primary); }
+  .fact span { font-size: 0.75rem; color: var(--color-text-muted); }
+
+  .quote { margin: 0; padding: var(--space-3) var(--space-4); background: var(--color-elevated);
+           border: 1px solid var(--color-border); border-radius: var(--radius-md); white-space: pre-wrap; }
+  .mono-box { margin: 0; padding: var(--space-3); background: var(--color-elevated); border: 1px solid var(--color-border);
+              border-radius: var(--radius-md); font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.6;
+              white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-text-secondary); max-height: 420px; overflow-y: auto; }
+  .mono-box .hl { color: var(--color-info); font-weight: 600; }
+  .mono-box .frag { color: var(--color-text-primary); font-weight: 600; }
+
+  details.fold { border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+  details.fold > summary { cursor: pointer; padding: var(--space-2) var(--space-3); color: var(--color-text-secondary);
+                           font-size: 0.8125rem; list-style-position: inside; }
+  details.fold[open] > summary { border-bottom: 1px solid var(--color-border); }
+  details.fold > .fold-body { padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
+  .http-line { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--color-text-primary); overflow-wrap: anywhere; }
+
+
+  .vector svg { display: block; width: 100%; height: 36px; border-radius: 4px; cursor: crosshair; }
+  .scale { display: flex; align-items: center; gap: var(--space-2); font-size: 0.75rem; color: var(--color-text-muted); }
+  .scale i { display: inline-block; width: 96px; height: 8px; border-radius: 4px;
+             background: linear-gradient(to right, #e34948, #f0efec, #2a78d6); }
+
+
+
+  .chart svg { display: block; width: 100%; height: 170px; overflow: visible; }
+  .chart text { font-family: var(--font-mono); font-size: 10px; fill: var(--color-text-muted); }
+  .chart .cut-label { fill: var(--color-text-secondary); font-family: var(--font-body); font-size: 11px; }
+
+
+  .rank-row { border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+  .rank-row summary { display: grid; grid-template-columns: 2.4em 7.5em 4.2em minmax(0, 1fr); align-items: center;
+                      gap: var(--space-3); padding: var(--space-2) var(--space-3); cursor: pointer; list-style: none; }
+  .rank-row summary::-webkit-details-marker { display: none; }
+  .rank-row[open] summary { border-bottom: 1px solid var(--color-border); }
+  .rank-row.out { background: transparent; border-style: dashed; }
+  .rank-row.out .rank-title { color: var(--color-text-muted); }
+  .rank-num { font-family: var(--font-mono); font-weight: 600; color: var(--color-text-secondary); }
+  .rank-score { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--color-text-primary); }
+  .rank-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; }
+  .rank-body { padding: var(--space-3); white-space: pre-wrap; font-size: 0.8125rem; color: var(--color-text-secondary); }
+  .rank-id { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-text-muted); padding: 0 var(--space-3) var(--space-3); }
+  .cutline { display: flex; align-items: center; gap: var(--space-3); color: var(--color-text-muted); font-size: 0.75rem; }
+  .cutline::before, .cutline::after { content: ""; flex: 1; border-top: 1px dashed var(--color-border-strong); }
+
+  .answer-text { white-space: pre-wrap; color: var(--color-text-primary); line-height: 1.6; margin: 0; }
+  .role { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; color: var(--color-text-muted); }
+
+  .tooltip { position: fixed; z-index: 10; pointer-events: none; max-width: 280px; padding: var(--space-2) var(--space-3);
+             background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);
+             box-shadow: var(--shadow-md); font-size: 0.75rem; color: var(--color-text-primary); white-space: pre-line; }
+
+  @media (max-width: 960px) {
+    .pipeline { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .stage::after { display: none; }
+  }
+  @media (max-width: 720px) {
+    .page { padding: var(--space-6) var(--space-4) var(--space-10); }
+    .toolbar, .io { grid-template-columns: minmax(0, 1fr); }
+    .pipeline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stage::after { display: none; }
+    .rank-row summary { grid-template-columns: 2em 4em minmax(0, 1fr); }
+    .rank-row summary .chip { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="nav">
+    <div class="nav-brand">
+      <span class="nav-mark">L</span>
+      <span>Локальный RAG</span>
+      <span class="t-body-sm t-muted">день 28</span>
+    </div>
+    <nav class="tabs" aria-label="Разделы">
+      <a class="tab" href="/">Сравнение</a>
+      <a class="tab" href="/results.html">Замеры</a>
+      <a class="tab" href="/inside.html" aria-selected="true">Внутри агента</a>
+    </nav>
+    <div class="nav-spacer"></div>
+    <span v-if="knowledge.chunks" class="t-mono-sm t-muted">
+      {{ knowledge.chunks }} {{ plural(knowledge.chunks, 'чанк', 'чанка', 'чанков') }} · {{ knowledge.model }}
+    </span>
+  </header>
+
+  <main class="page stack stack-lg">
+    <div class="heading">
+      <div>
+        <div class="t-label-sm t-secondary">Система крупным планом</div>
+        <h1 class="t-headline-lg">Внутри агента</h1>
+        <p class="t-body-md t-secondary">
+          Как один вопрос проходит путь от текста до ответа: что уходит в каждый кубик, что из него выходит
+          и сколько это стоит. Всё ниже — данные настоящего запроса, а не схема.
+        </p>
+      </div>
+    </div>
+
+    <section class="card toolbar" aria-label="Выбор запроса">
+      <div class="field">
+        <label class="field-label" for="trace-select">Запрос из журнала</label>
+        <select id="trace-select" class="select" v-model="selectedId" @change="open(selectedId)" :disabled="!traces.length">
+          <option v-if="!traces.length" value="">Пока нет запросов</option>
+          <option v-for="t in traces" :key="t.id" :value="t.id">
+            {{ time(t.at) }} · {{ statusLabel(t.status) }} · {{ t.question }}
+          </option>
+        </select>
+      </div>
+      <form class="field" @submit.prevent="probe">
+        <label class="field-label" for="probe-input">Или задайте новый вопрос и посмотрите, как он проходит</label>
+        <div class="probe">
+          <input id="probe-input" class="input" v-model="question" autocomplete="off" placeholder="Вопрос агенту">
+          <button class="btn btn-primary" type="submit" :disabled="busy || !question.trim()">
+            {{ busy ? 'Выполняется…' : 'Отправить' }}
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <div v-if="loadError" class="card card-accent" data-accent="danger">
+      <div class="row"><span class="chip" data-tone="danger">Ошибка</span><span>{{ loadError }}</span></div>
+    </div>
+
+    <div v-if="!trace && !traces.length && !loadError" class="card">
+      <div class="card-title">Журнал пуст</div>
+      <p class="card-body">
+        Журнал живёт в памяти сервиса и очищается при перезапуске. Задайте вопрос выше или в
+        <a href="/">сравнении</a> — здесь появится каждый его шаг.
+      </p>
+    </div>
+
+    <template v-if="trace">
+
+      <section class="card stack stack-md" aria-label="Путь запроса">
+        <div class="row-between" style="flex-wrap: wrap">
+          <div class="row">
+            <span v-if="!failed" class="chip" :data-tone="statusTone(trace.outcome.status)">{{ statusLabel(trace.outcome.status) }}</span>
+            <span v-if="failed" class="chip" data-tone="danger">Упал на шаге «{{ stageName(failedStage) }}»</span>
+          </div>
+          <span class="t-mono-sm t-muted">{{ dateTime(trace.at) }} · всего {{ ms(trace.totalMs) }}</span>
+        </div>
+
+        <div class="pipeline">
+          <button v-for="(s, i) in stages" :key="s.key" class="stage" type="button" :data-state="s.state" @click="jump(s.key)">
+            <div class="stage-top">
+              <span class="stage-number">{{ String(i + 1).padStart(2, '0') }}</span>
+              <span class="stage-title">{{ s.title }}</span>
+            </div>
+            <span class="stage-where">{{ s.where }}</span>
+            <span class="stage-value">{{ s.value }}</span>
+          </button>
+        </div>
+
+        <div class="stack stack-sm">
+          <div class="t-label-sm t-secondary">На что ушло время</div>
+          <div class="bar" role="img" :aria-label="timeSegments.map(s => s.label + ' ' + ms(s.value)).join(', ')">
+            <span v-for="s in timeSegments" :key="s.label" :style="{ flex: s.value, background: s.color }"
+                  @mousemove="tip($event, s.label + ': ' + ms(s.value))" @mouseleave="untip"></span>
+          </div>
+          <div class="legend">
+            <span v-for="s in timeSegments" :key="s.label" class="legend-item">
+              <i class="swatch" :style="{ background: s.color }"></i>{{ s.label }} <b>{{ ms(s.value) }}</b>
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <div class="stack stack-lg">
+
+        <article class="card step" id="step-question">
+          <div class="step-head">
+            <span class="step-badge">01</span>
+            <div class="grow">
+              <div class="card-title">Вопрос приходит к агенту</div>
+              <div class="step-where">AgentController → Agent.ask</div>
+            </div>
+          </div>
+          <p class="explain">
+            Каждый вопрос проходит один путь: поисковый запрос, поиск, реранкинг и порог релевантности. Модель
+            вызывается, только если хоть один фрагмент прошёл порог, а её ответ принимается, только если цитаты
+            дословно нашлись во фрагментах. Во всех остальных случаях агент отвечает «Не знаю. Уточните вопрос.»
+          </p>
+          <blockquote class="quote">{{ trace.question }}</blockquote>
+        </article>
+
+
+        <article class="card step" id="step-rewrite">
+          <div class="step-head"><span class="step-badge">02</span><div class="grow"><div class="card-title">Подготовка поискового вопроса</div><div class="step-where">QueryRewriter → Ollama · {{ steps.rewrite?.model }}</div></div><span v-if="steps.rewrite" class="chip" data-tone="neutral">{{ ms(steps.rewrite.durationMs) }}</span></div>
+          <template v-if="steps.rewrite">
+            <p class="explain">{{ steps.rewrite.decision.reason }}</p>
+            <p class="explain">Для ответа модель получит исходный вопрос и историю; поисковая формулировка используется в эмбеддинге и реранкере.</p>
+            <div class="row"><span class="chip" :data-tone="steps.rewrite.decision.status === 'fallback' ? 'warning' : 'neutral'">{{ rewriteLabel(steps.rewrite.decision.status) }}</span></div>
+            <div class="io">
+              <div><div class="t-label-sm t-secondary">Исходный вопрос</div><pre class="mono-box">{{ steps.rewrite.decision.input }}</pre></div>
+              <div><div class="t-label-sm t-secondary">Поисковый запрос</div><pre class="mono-box">{{ steps.rewrite.decision.query }}</pre></div>
+            </div>
+            <details v-if="steps.rewrite.exchange" class="http-block"><summary>Запрос переформулировки и ответ Ollama</summary>
+              <div class="http-line">{{ steps.rewrite.exchange.method }} {{ steps.rewrite.exchange.url }} → {{ steps.rewrite.exchange.status }}</div>
+              <pre class="mono-box">{{ pretty(steps.rewrite.exchange.requestBody) }}</pre><pre class="mono-box">{{ pretty(steps.rewrite.exchange.responseBody) }}</pre>
+            </details>
+          </template><p v-else class="explain">{{ missingNote('rewrite') }}</p>
+        </article>
+
+        <article class="card step" id="step-embedding" :class="{ 'card-accent': failedStage === 'embedding' }"
+                 :data-accent="failedStage === 'embedding' ? 'danger' : null">
+          <div class="step-head">
+            <span class="step-badge">03</span>
+            <div class="grow">
+              <div class="card-title">Вопрос превращается в вектор</div>
+              <div class="step-where">Retriever → EmbeddingClient → Ollama /api/embed</div>
+            </div>
+            <span v-if="steps.embedding" class="chip" data-tone="neutral">{{ ms(steps.embedding.durationMs) }}</span>
+          </div>
+          <template v-if="steps.embedding">
+            <p class="explain">
+              Модель эмбеддингов переводит текст в {{ steps.embedding.dimensions }} чисел — координаты смысла.
+              Тем же способом при сборке базы закодирован каждый чанк, поэтому вектор вопроса можно сравнить с ними.
+              Перед вопросом стоит префикс <code>search_query:</code> — модель обучали кодировать запросы и документы по-разному.
+            </p>
+            <div class="io">
+              <div class="stack stack-sm">
+                <div class="t-label-sm t-secondary">Вход — текст для модели</div>
+                <pre class="mono-box"><span class="hl">{{ prefixOf(steps.embedding.input) }}</span>{{ steps.embedding.input.slice(prefixOf(steps.embedding.input).length) }}</pre>
+                <div class="facts">
+                  <div class="fact"><b>{{ steps.embedding.model }}</b><span>модель</span></div>
+                  <div class="fact"><b>{{ steps.embedding.tokens ?? '—' }}</b><span>токенов прочитано</span></div>
+                </div>
+              </div>
+              <div class="stack stack-sm vector">
+                <div class="t-label-sm t-secondary">Выход — вектор из {{ steps.embedding.dimensions }} чисел</div>
+                <svg :view-box.camel="'0 0 ' + steps.embedding.vector.length + ' 1'" preserveAspectRatio="none"
+                     role="img" aria-label="Значения вектора вопроса, цветом от отрицательных к положительным"
+                     @mousemove="vectorTip($event)" @mouseleave="untip">
+                  <rect v-for="(color, i) in vectorColors" :key="i" :x="i" y="0" width="1.05" height="1" :fill="color"></rect>
+                </svg>
+                <div class="row-between" style="flex-wrap: wrap">
+                  <span class="scale">−{{ vectorMax.toFixed(3) }} <i></i> +{{ vectorMax.toFixed(3) }}</span>
+                  <span class="t-mono-sm t-muted">длина вектора {{ steps.embedding.norm.toFixed(3) }}</span>
+                </div>
+                <pre class="mono-box">[{{ steps.embedding.vector.slice(0, 6).map(v => v.toFixed(4)).join(', ') }}, … ещё {{ steps.embedding.vector.length - 6 }}]</pre>
+              </div>
+            </div>
+            <details class="fold">
+              <summary>HTTP-обмен с Ollama — как он ушёл и пришёл</summary>
+              <div class="fold-body">
+                <div class="http-line">{{ steps.embedding.exchange.method }} {{ steps.embedding.exchange.url }} → {{ steps.embedding.exchange.status }} · {{ ms(steps.embedding.exchange.durationMs) }}</div>
+                <div class="t-label-sm t-secondary">Тело запроса</div>
+                <pre class="mono-box">{{ pretty(steps.embedding.exchange.requestBody) }}</pre>
+                <div class="t-label-sm t-secondary">Тело ответа <span class="t-muted">(вектор сокращён)</span></div>
+                <pre class="mono-box">{{ pretty(steps.embedding.exchange.responseBody) }}</pre>
+              </div>
+            </details>
+          </template>
+          <p v-else class="explain">{{ missingNote('embedding') }}</p>
+        </article>
+
+
+        <article class="card step" id="step-search" :class="{ 'card-accent': failedStage === 'search' }"
+                 :data-accent="failedStage === 'search' ? 'danger' : null">
+          <div class="step-head">
+            <span class="step-badge">04</span>
+            <div class="grow">
+              <div class="card-title">Поиск похожих фрагментов в базе знаний</div>
+              <div class="step-where">KnowledgeBase.rank — все чанки в памяти, из data/index/knowledge.db</div>
+            </div>
+            <span v-if="steps.search" class="chip" data-tone="neutral">{{ ms(steps.search.durationMs) }}</span>
+          </div>
+          <template v-if="steps.search">
+            <p class="explain">
+              Вектор вопроса сравнивается с вектором каждого из {{ steps.search.chunksCompared }} чанков: считается косинус
+              угла между ними — чем ближе к 1, тем ближе смысл. Это полный перебор в памяти, векторный индекс на таком
+              объёме не нужен. Для следующего этапа отбираются {{ steps.search.topK }} самых близких кандидатов.
+            </p>
+            <div class="facts">
+              <div class="fact"><b>{{ fmt(searchStats.best) }}</b><span>лучший косинус</span></div>
+              <div class="fact"><b>{{ fmt(searchStats.cut) }}</b><span>порог — {{ steps.search.topK }}-е место</span></div>
+              <div class="fact"><b>{{ fmt(searchStats.median) }}</b><span>медиана по базе</span></div>
+              <div class="fact"><b>{{ fmt(searchStats.gap) }}</b><span>разрыв 1-го и 10-го места</span></div>
+            </div>
+
+            <div class="stack stack-sm chart" :ref="observeChart">
+              <div class="t-label-sm t-secondary">Косинус каждого чанка базы к вопросу</div>
+              <svg :view-box.camel="'0 0 ' + H.w + ' ' + H.h" role="img"
+                   :aria-label="'Гистограмма косинусов ' + steps.search.chunksCompared + ' чанков, выбранные — справа от порога'">
+                <line v-for="t in histogram.yTicks" :key="'y' + t.value" :x1="H.left" :x2="H.w - H.right" :y1="t.y" :y2="t.y" stroke="var(--viz-grid)" stroke-width="1"></line>
+                <text v-for="t in histogram.yTicks" :key="'yl' + t.value" :x="H.left - 6" :y="t.y + 3" text-anchor="end">{{ t.value }}</text>
+                <g v-for="b in histogram.bins" :key="b.index">
+                  <path v-if="b.rest" :d="b.restPath" fill="var(--viz-rest)"></path>
+                  <path v-if="b.selected" :d="b.selectedPath" fill="var(--viz-1)"></path>
+                  <rect :x="b.x" :y="H.top" :width="b.w" :height="H.plot" fill="transparent"
+                        @mousemove="tip($event, b.tooltip)" @mouseleave="untip"></rect>
+                </g>
+                <line :x1="H.left" :x2="H.w - H.right" :y1="H.top + H.plot" :y2="H.top + H.plot" stroke="var(--color-border-strong)" stroke-width="1"></line>
+                <text v-for="t in histogram.xTicks" :key="'x' + t.value" :x="t.x" :y="H.h - 4" text-anchor="middle">{{ t.label }}</text>
+                <line :x1="histogram.cutX" :x2="histogram.cutX" :y1="H.top - 4" :y2="H.top + H.plot" stroke="var(--color-text-secondary)" stroke-width="1" stroke-dasharray="3 3"></line>
+                <text class="cut-label" :x="histogram.cutX - 6" :y="H.top + 6" text-anchor="end">порог top-{{ steps.search.topK }}</text>
+              </svg>
+              <div class="legend">
+                <span class="legend-item"><i class="swatch" style="background: var(--viz-1)"></i>отобраны <b>{{ steps.search.topK }}</b></span>
+                <span class="legend-item"><i class="swatch" style="background: var(--viz-rest)"></i>остальные <b>{{ steps.search.chunksCompared - steps.search.topK }}</b></span>
+              </div>
+            </div>
+
+            <div class="stack stack-sm">
+              <div class="t-label-sm t-secondary">Начало рейтинга — нажмите на строку, чтобы прочитать чанк</div>
+              <template v-for="c in steps.search.candidates" :key="c.chunkId">
+                <div v-if="c.rank === steps.search.topK + 1" class="cutline">дальше — не прошли отбор кандидатов</div>
+                <details class="rank-row" :class="{ out: !c.selected }">
+                  <summary>
+                    <span class="rank-num">{{ c.rank }}</span>
+                    <span class="chip" :data-tone="c.selected ? 'info' : 'neutral'">{{ c.selected ? 'кандидат' : 'не попал' }}</span>
+                    <span class="rank-score">{{ c.score.toFixed(3) }}</span>
+                    <span class="rank-title">{{ c.title }}</span>
+                  </summary>
+                  <div class="rank-body">{{ c.text }}</div>
+                  <div class="rank-id">{{ c.chunkId }}</div>
+                </details>
+              </template>
+            </div>
+          </template>
+          <p v-else class="explain">{{ missingNote('search') }}</p>
+        </article>
+
+
+        <article class="card step" id="step-rerank" :class="{ 'card-accent': failedStage === 'rerank' }" :data-accent="failedStage === 'rerank' ? 'danger' : null">
+          <div class="step-head">
+            <span class="step-badge">05</span>
+            <div class="grow"><div class="card-title">Реранкинг кандидатов</div><div class="step-where">RerankerClient → локальный llama.cpp</div></div>
+            <span v-if="steps.rerank" class="chip" data-tone="neutral">{{ ms(steps.rerank.durationMs) }}</span>
+          </div>
+          <template v-if="steps.rerank">
+            <p class="explain">Cross-encoder совместно читает вопрос и каждый из {{ steps.rerank.candidateK }} фрагментов. Дальше идут {{ steps.rerank.topK }} с наибольшей оценкой — их проверит порог релевантности. Оценка может быть отрицательной или больше единицы; это не вероятность и не косинус.</p>
+            <div class="t-mono-sm t-secondary">{{ steps.rerank.model }}</div>
+            <div class="stack stack-sm">
+              <details v-for="c in steps.rerank.candidates" :key="c.chunkId" class="rank-row" :class="{ out: !c.selected }">
+                <summary>
+                  <span class="rank-num">{{ c.selected ? '[' + c.rank + ']' : c.rank }}</span>
+                  <span class="chip" :data-tone="c.selected ? 'info' : 'neutral'">{{ c.selected ? 'top-' + steps.rerank.topK : 'не попал' }}</span>
+                  <span class="rank-score">{{ c.rerankScore.toFixed(3) }}</span>
+                  <span class="rank-title">{{ c.title }}</span>
+                </summary>
+                <div class="rank-body"><div class="t-mono-sm t-muted">Косинус {{ c.score.toFixed(3) }} · место {{ c.originalRank }} → {{ c.rank }}</div><div class="t-body-sm t-secondary">{{ c.section }}</div>{{ c.text }}</div>
+                <div class="rank-id">{{ c.chunkId }}</div>
+              </details>
+            </div>
+            <details v-if="steps.rerank.exchange" class="http-block"><summary>HTTP-запрос и ответ реранкера</summary>
+              <div class="http-line">{{ steps.rerank.exchange.method }} {{ steps.rerank.exchange.url }} → {{ steps.rerank.exchange.status }}</div>
+              <pre class="mono-box">{{ pretty(steps.rerank.exchange.requestBody) }}</pre><pre class="mono-box">{{ pretty(steps.rerank.exchange.responseBody) }}</pre>
+            </details>
+          </template>
+          <p v-else class="explain">{{ missingNote('rerank') }}</p>
+        </article>
+
+        <article class="card step" id="step-threshold">
+          <div class="step-head">
+            <span class="step-badge">06</span>
+            <div class="grow"><div class="card-title">Порог релевантности</div><div class="step-where">Retrieval.context ← retrieval.min-rerank-score</div></div>
+          </div>
+          <template v-if="steps.threshold">
+            <p class="explain">
+              Оценка BGE каждого фрагмента из top-{{ steps.threshold.topK }} сравнивается с порогом {{ fmt2(steps.threshold.minScore) }}.
+              В промпт идут только прошедшие, под теми же номерами.
+              <template v-if="!steps.threshold.passed"><b>Ни один не прошёл:</b> модель не вызывается, агент отвечает «Не знаю. Уточните вопрос.» — опереться ответу не на что.</template>
+            </p>
+            <div class="facts">
+              <div class="fact"><b>{{ fmt2(steps.threshold.minScore) }}</b><span>порог BGE</span></div>
+              <div class="fact"><b>{{ fmt2(steps.threshold.fragments[0]?.rerankScore) }}</b><span>лучший фрагмент</span></div>
+              <div class="fact"><b>{{ steps.threshold.passed }} из {{ steps.threshold.topK }}</b><span>прошли в промпт</span></div>
+            </div>
+            <div class="stack stack-sm">
+              <details v-for="f in steps.threshold.fragments" :key="f.chunkId" class="rank-row" :class="{ out: !f.passed }">
+                <summary>
+                  <span class="rank-num">{{ f.passed ? '[' + f.rank + ']' : f.rank }}</span>
+                  <span class="chip" :data-tone="f.passed ? 'success' : 'warning'">{{ f.passed ? 'в промпт' : 'ниже порога' }}</span>
+                  <span class="rank-score">{{ f.rerankScore.toFixed(3) }}</span>
+                  <span class="rank-title">{{ f.title }}</span>
+                </summary>
+                <div class="rank-body t-body-sm t-secondary">{{ f.section || 'Введение' }}</div>
+                <div class="rank-id">{{ f.chunkId }}</div>
+              </details>
+            </div>
+          </template>
+          <p v-else class="explain">{{ missingNote('threshold') }}</p>
+        </article>
+
+        <article class="card step" id="step-prompt">
+          <div class="step-head">
+            <span class="step-badge">07</span>
+            <div class="grow">
+              <div class="card-title">Фрагменты склеиваются с вопросом в промпт</div>
+              <div class="step-where">PromptBuilder.answer</div>
+            </div>
+            <span v-if="steps.prompt" class="chip" data-tone="neutral">{{ ms(steps.prompt.durationMs) }}</span>
+          </div>
+          <template v-if="steps.prompt">
+            <p class="explain">
+              Прошедшие порог фрагменты под номерами [1]…[{{ steps.threshold?.passed }}] вставляются в сообщение пользователя
+              перед вопросом. Правила в system требуют отвечать только по фрагментам и вернуть JSON: ответ со ссылками [n]
+              и дословные цитаты к каждой ссылке — или статус unknown, если ответа во фрагментах нет.
+            </p>
+            <div class="stack stack-sm">
+              <div class="t-label-sm t-secondary">Из чего сложен промпт, символов</div>
+              <div class="bar" role="img" :aria-label="promptSegments.map(s => s.label + ' ' + s.value).join(', ')">
+                <span v-for="s in promptSegments" :key="s.label" :style="{ flex: s.value, background: s.color }"
+                      @mousemove="tip($event, s.label + ': ' + num(s.value) + ' симв.')" @mouseleave="untip"></span>
+              </div>
+              <div class="legend">
+                <span v-for="s in promptSegments" :key="s.label" class="legend-item">
+                  <i class="swatch" :style="{ background: s.color }"></i>{{ s.label }}
+                  <b>{{ num(s.value) }}</b> · {{ share(s.value, promptSegments) }}
+                </span>
+              </div>
+            </div>
+            <div v-for="(m, i) in steps.prompt.messages" :key="i" class="stack stack-sm">
+              <span class="role">{{ m.role.toUpperCase() }}</span>
+              <pre class="mono-box"><template v-for="(line, j) in m.content.split('\n')" :key="j"><span :class="lineClass(line)">{{ line }}</span>{{ '\n' }}</template></pre>
+            </div>
+          </template>
+          <p v-else class="explain">{{ missingNote('prompt') }}</p>
+        </article>
+
+
+        <section v-if="traceModels.length" class="card model-switch" aria-label="Модель">
+          <div class="t-label-sm t-secondary">Шаги 8–9 выполняются для каждой модели на одном и том же промпте</div>
+          <div class="tabs" role="tablist">
+            <button v-for="m in traceModels" :key="m.model" class="tab" type="button" role="tab"
+                    :aria-selected="m.model === selectedModel" @click="selectedModel = m.model">
+              {{ m.provider === 'cloud' ? 'Облако' : 'Локально' }} · {{ m.model }}
+            </button>
+          </div>
+        </section>
+
+        <article class="card step" id="step-llm" :class="{ 'card-accent': failedStage === 'llm' }"
+                 :data-accent="failedStage === 'llm' ? 'danger' : null">
+          <div class="step-head">
+            <span class="step-badge">08</span>
+            <div class="grow">
+              <div class="card-title">Промпт уходит в модель</div>
+              <div class="step-where">{{ steps.llm?.provider === 'cloud' ? 'DeepSeekClient → DeepSeek /chat/completions' : 'OllamaChatClient → Ollama /api/chat' }}</div>
+            </div>
+            <span v-if="steps.llm" class="chip" data-tone="neutral">{{ ms(steps.llm.durationMs) }}</span>
+          </div>
+          <template v-if="steps.llm">
+            <p v-if="steps.llm.provider === 'cloud'" class="explain">
+              HTTP POST в облачный OpenAI-совместимый API с <code>response_format: json_object</code>: гарантирован только
+              синтаксис JSON. Ключ API остаётся на сервере — в заголовке ниже он скрыт.
+            </p>
+            <p v-else class="explain">
+              HTTP POST в Ollama на этом компьютере. В <code>format</code> лежит JSON-схема ответа: Ollama превращает её
+              в грамматику, и модель не может написать ничего вне схемы. <code>think: false</code> выключает рассуждения,
+              <code>num_ctx</code> задаёт окно контекста. Тайминги ниже — из ответа Ollama.
+            </p>
+            <div class="facts">
+              <div class="fact"><b>{{ steps.llm.model }}</b><span>модель</span></div>
+              <div class="fact"><b>{{ num(steps.llm.promptTokens) }}</b><span>токенов промпта</span></div>
+              <div class="fact"><b>{{ num(steps.llm.completionTokens) }}</b><span>токенов ответа</span></div>
+              <div class="fact"><b>{{ steps.llm.finishReason ?? '—' }}</b><span>почему остановилась</span></div>
+              <div class="fact"><b>{{ steps.llm.exchange.status }}</b><span>HTTP-статус</span></div>
+              <template v-if="steps.llm.timings">
+                <div class="fact"><b>{{ ms(steps.llm.timings.loadMs) }}</b><span>загрузка модели</span></div>
+                <div class="fact"><b>{{ ms(steps.llm.timings.promptMs) }}</b><span>обработка промпта</span></div>
+                <div class="fact"><b>{{ ms(steps.llm.timings.generationMs) }}</b><span>генерация</span></div>
+                <div class="fact"><b>{{ steps.llm.timings.generationMs ? Math.round(steps.llm.completionTokens / steps.llm.timings.generationMs * 1000) : '—' }}</b><span>токенов в секунду</span></div>
+              </template>
+            </div>
+            <div class="io">
+              <div class="stack stack-sm">
+                <div class="t-label-sm t-secondary">Запрос</div>
+                <div class="http-line">{{ steps.llm.exchange.method }} {{ steps.llm.exchange.url }}</div>
+                <pre class="mono-box">{{ headers(steps.llm.exchange.requestHeaders) }}</pre>
+                <pre class="mono-box">{{ pretty(steps.llm.exchange.requestBody) }}</pre>
+              </div>
+              <div class="stack stack-sm">
+                <div class="t-label-sm t-secondary">Ответ</div>
+                <div class="http-line">{{ steps.llm.exchange.status }} · {{ ms(steps.llm.exchange.durationMs) }}</div>
+                <pre class="mono-box">{{ pretty(steps.llm.exchange.responseBody) }}</pre>
+              </div>
+            </div>
+          </template>
+          <p v-else class="explain">{{ missingNote('llm') }}</p>
+        </article>
+
+
+        <article class="card step" id="step-grounding">
+          <div class="step-head">
+            <span class="step-badge">09</span>
+            <div class="grow"><div class="card-title">Проверка цитат</div><div class="step-where">GroundingChecker → QuoteLocator</div></div>
+            <span v-if="steps.grounding" class="chip" data-tone="neutral">{{ ms(steps.grounding.durationMs) }}</span>
+          </div>
+          <template v-if="steps.grounding">
+            <p class="explain">
+              Каждая цитата ищется дословно во фрагменте, на который ссылается. Прощаются только пробелы, регистр, ё/е,
+              вид кавычек и тире, Markdown-символы. У каждой ссылки [n] в ответе должна быть цитата из фрагмента n.
+              Любое нарушение — ответ отклоняется, агент говорит «не знаю». В чат уходит текст источника, а не версия модели.
+            </p>
+            <div class="row"><span class="chip" :data-tone="statusTone(steps.grounding.status)">{{ statusLabel(steps.grounding.status) }}</span></div>
+            <div v-if="steps.grounding.errors.length" class="stack stack-sm">
+              <div class="t-label-sm t-secondary">Нарушения</div>
+              <pre class="mono-box">{{ steps.grounding.errors.join('\n') }}</pre>
+            </div>
+            <div v-if="steps.grounding.checks.length" class="stack stack-sm">
+              <div class="t-label-sm t-secondary">Цитаты от модели · найдено {{ steps.grounding.checks.filter(c => c.found).length }} из {{ steps.grounding.checks.length }}</div>
+              <details v-for="(c, i) in steps.grounding.checks" :key="i" class="rank-row" :class="{ out: !c.found }">
+                <summary>
+                  <span class="rank-num">[{{ c.number ?? '?' }}]</span>
+                  <span class="chip" :data-tone="c.found ? 'success' : 'danger'">{{ c.found ? 'найдена' : 'нет в тексте' }}</span>
+                  <span class="rank-score">{{ c.found ? c.found.start + '–' + c.found.end : '—' }}</span>
+                  <span class="rank-title">{{ c.claimed }}</span>
+                </summary>
+                <div class="rank-body"><div class="t-label-sm t-muted">Модель написала</div>{{ c.claimed }}<template v-if="c.found"><div class="t-label-sm t-muted" style="margin-top: var(--space-3)">Текст источника</div>{{ c.found.text }}</template></div>
+                <div v-if="c.found" class="rank-id">{{ c.found.chunkId }}</div>
+              </details>
+            </div>
+            <div v-if="steps.grounding.answer" class="stack stack-sm">
+              <div class="t-label-sm t-secondary">Текст ответа модели{{ steps.grounding.references.length ? ' · ссылки ' + steps.grounding.references.map(n => '[' + n + ']').join(' ') : ' · без ссылок' }}</div>
+              <p class="answer-text">{{ steps.grounding.answer }}</p>
+            </div>
+          </template>
+          <p v-else class="explain">{{ missingNote('grounding') }}</p>
+        </article>
+
+        <article class="card step" id="step-answer" :class="{ 'card-accent': failed }" :data-accent="failed ? 'danger' : null">
+          <div class="step-head">
+            <span class="step-badge">10</span>
+            <div class="grow">
+              <div class="card-title">{{ failed ? 'Ответа нет — запрос упал' : 'Ответ пользователю' }}</div>
+              <div class="step-where">{{ failed ? 'ApiExceptionHandler → текст ошибки на экран' : 'AgentAnswer' + ' → чат' }}</div>
+            </div>
+          </div>
+          <template v-if="!failed">
+            <p class="explain">
+              <span class="chip" :data-tone="statusTone(trace.outcome.status)">{{ statusLabel(trace.outcome.status) }}</span>
+              <template v-if="citedNumbers.length"> Номера в квадратных скобках — ссылки на фрагменты с подтверждёнными цитатами: {{ citedNumbers.map(n => '[' + n + ']').join(' ') }}. Наведите на номер, чтобы увидеть документ.</template>
+            </p>
+            <p class="answer-text"><template v-for="(part, i) in splitCitations(trace.outcome.answer)" :key="i"><span v-if="part.cite" class="cite" :title="citeTitle(part.numbers)">{{ part.text }}</span><template v-else>{{ part.text }}</template></template></p>
+          </template>
+          <pre v-else class="mono-box">{{ trace.outcome.error }}</pre>
+        </article>
+      </div>
+    </template>
+  </main>
+
+  <div v-if="tooltip.text" class="tooltip" :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }">{{ tooltip.text }}</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, ref, computed, onMounted, nextTick } = Vue;
+
+const STAGES = [
+  { key: 'question', title: 'Вопрос', where: 'Agent' },
+  { key: 'rewrite', title: 'Query rewrite', where: 'Ollama' },
+  { key: 'embedding', title: 'Эмбеддинг', where: 'Ollama' },
+  { key: 'search', title: 'Поиск', where: 'KnowledgeBase' },
+  { key: 'rerank', title: 'Реранкинг', where: 'llama.cpp' },
+  { key: 'threshold', title: 'Порог', where: 'Retrieval' },
+  { key: 'prompt', title: 'Промпт', where: 'PromptBuilder', model: true },
+  { key: 'llm', title: 'Модель', where: 'выбранная ниже', model: true },
+  { key: 'grounding', title: 'Цитаты', where: 'GroundingChecker', model: true },
+  { key: 'answer', title: 'Ответ', where: 'Agent' },
+];
+const STATUS = {
+  answered: ['С цитатами', 'success'], weak_context: ['Не знаю · слабый контекст', 'warning'],
+  no_answer: ['Не знаю · нет во фрагментах', 'warning'], unverified: ['Не знаю · цитаты не подтвердились', 'warning'],
+  failed: ['Ошибка', 'danger'],
+};
+
+createApp({
+  setup() {
+    const traces = ref([]);
+    const selectedId = ref('');
+    const trace = ref(null);
+    const knowledge = ref({});
+    const question = ref('');
+    const busy = ref(false);
+    const loadError = ref('');
+    const tooltip = ref({ text: '', x: 0, y: 0 });
+
+    const chartWidth = ref(720);
+    const H = computed(() => ({ w: chartWidth.value, h: 170, left: 34, right: 8, top: 14, bottom: 22, plot: 134 }));
+    let observed = null;
+    const resize = new ResizeObserver(([entry]) => { chartWidth.value = Math.max(280, Math.round(entry.contentRect.width)); });
+    function observeChart(el) {
+      if (!el || el === observed) return;
+      if (observed) resize.unobserve(observed);
+      observed = el;
+      resize.observe(el);
+    }
+
+    async function getJson(url, options) {
+      const response = await fetch(url, options);
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.message || `HTTP ${response.status}`);
+      return body;
+    }
+
+    async function loadList() {
+      traces.value = await getJson('/api/traces');
+    }
+
+    async function open(id) {
+      if (!id) return;
+      loadError.value = '';
+      try {
+        trace.value = await getJson(`/api/traces/${id}`);
+        selectedId.value = id;
+        if (!traceModels.value.some(m => m.model === selectedModel.value)) selectedModel.value = traceModels.value[0]?.model || '';
+        history.replaceState(null, '', `/inside.html?trace=${id}`);
+      } catch (e) {
+        loadError.value = e.message;
+      }
+    }
+
+    async function probe() {
+      const text = question.value.trim();
+      if (!text || busy.value) return;
+      busy.value = true;
+      loadError.value = '';
+      try {
+        // /api/ask отвечает NDJSON-стримом; здесь достаточно дождаться конца и взять traceId из события retrieval.
+        const response = await fetch('/api/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: text }),
+        });
+        const raw = await response.text();
+        if (!response.ok) throw new Error(JSON.parse(raw).message || `HTTP ${response.status}`);
+        const events = raw.split('\n').filter(Boolean).map(line => JSON.parse(line));
+        const retrieval = events.find(e => e.type === 'retrieval');
+        await loadList();
+        await open(retrieval ? retrieval.data.traceId : traces.value[0]?.id);
+      } catch (e) {
+        await loadList();
+        if (traces.value.length) await open(traces.value[0].id);
+        else loadError.value = e.message;
+      } finally {
+        busy.value = false;
+        question.value = '';
+      }
+    }
+
+    onMounted(async () => {
+      getJson('/api/knowledge').then(k => { knowledge.value = k; }).catch(() => {});
+      try {
+        await loadList();
+        const wanted = new URLSearchParams(location.search).get('trace');
+        await open(wanted || traces.value[0]?.id);
+      } catch (e) {
+        loadError.value = e.message;
+      }
+    });
+
+    // Шаги llm, llm_failure и grounding есть у каждой модели — показываем выбранную.
+    const selectedModel = ref('');
+    const PER_MODEL = ['llm', 'llm_failure', 'grounding'];
+    const traceModels = computed(() => {
+      const seen = new Map();
+      for (const s of trace.value?.steps || []) {
+        if (PER_MODEL.includes(s.kind) && s.provider && !seen.has(s.model)) seen.set(s.model, { model: s.model, provider: s.provider });
+      }
+      return [...seen.values()].sort((a, b) => (a.provider === 'cloud') - (b.provider === 'cloud'));
+    });
+    const steps = computed(() => Object.fromEntries((trace.value?.steps || [])
+      .filter(s => !PER_MODEL.includes(s.kind) || s.model === selectedModel.value)
+      .map(s => [s.kind, s])));
+    const failed = computed(() => trace.value?.outcome.status === 'failed');
+    // Контекст слабее порога: промпт, модель и проверка цитат не нужны.
+    const weak = computed(() => steps.value.threshold?.passed === 0);
+
+
+    const failedStage = computed(() => {
+      if (!failed.value) return null;
+      const expected = ['rewrite', 'embedding', 'search', 'rerank', 'threshold', 'prompt', 'llm', 'grounding'];
+      return expected.find(k => !steps.value[k]) || 'answer';
+    });
+
+    const stages = computed(() => {
+      const t = trace.value, s = steps.value;
+      return STAGES.map(stage => {
+        let state = 'done', value = '';
+        if ((stage.model && weak.value) || (stage.key === 'rewrite' && s.rewrite?.decision.enabled === false)) state = 'skipped';
+        else if (stage.key === failedStage.value) state = 'failed';
+        else if (stage.key === 'llm' && s.llm_failure) state = 'failed';
+        else if (!['question', 'answer'].includes(stage.key) && !s[stage.key]) state = 'pending';
+        else if (stage.key === 'answer' && failed.value) state = 'pending';
+
+        if (state === 'skipped') value = stage.model ? 'не нужен: контекст слабый' : 'выключен';
+        else if (state === 'failed') value = stage.key === 'llm' && s.llm_failure ? 'модель не ответила' : 'упал';
+        else if (state === 'pending') value = 'не выполнялся';
+        else if (stage.key === 'question') value = `${t.question.length} симв.`;
+        else if (stage.key === 'rewrite') value = `${rewriteLabel(s.rewrite.decision.status)} · ${ms(s.rewrite.durationMs)}`;
+        else if (stage.key === 'embedding') value = `${s.embedding.dimensions} чисел · ${ms(s.embedding.durationMs)}`;
+        else if (stage.key === 'search') value = `${s.search.chunksCompared} → ${s.search.topK} · ${ms(s.search.durationMs)}`;
+        else if (stage.key === 'rerank') value = `${s.rerank.candidateK} → ${s.rerank.topK} · ${ms(s.rerank.durationMs)}`;
+        else if (stage.key === 'threshold') value = `${s.threshold.passed} из ${s.threshold.topK} ≥ ${fmt2(s.threshold.minScore)}`;
+        else if (stage.key === 'grounding') value = `${s.grounding.checks.filter(c => c.found).length} из ${s.grounding.checks.length} цитат`;
+        else if (stage.key === 'prompt') value = `${num(s.prompt.messages.reduce((n, m) => n + m.content.length, 0))} симв.`;
+        else if (stage.key === 'llm') value = `${num(s.llm.promptTokens)} → ${num(s.llm.completionTokens)} ток. · ${ms(s.llm.durationMs)}`;
+        else if (stage.key === 'answer') value = statusLabel(t.outcome.status);
+        return { ...stage, state, value };
+      });
+    });
+
+    function stageName(key) {
+      return STAGES.find(s => s.key === key)?.title || key;
+    }
+
+    function missingNote(key) {
+      const stage = stages.value.find(s => s.key === key);
+      if (stage.state === 'skipped') return stage.model ? 'Шаг пропущен: ни один фрагмент не прошёл порог релевантности, модель не вызывалась.' : 'Шаг выключен в настройках.';
+      if (key === 'llm' && steps.value.llm_failure) return `Модель не ответила: ${steps.value.llm_failure.error}`;
+      if (key === 'grounding' && steps.value.llm_failure) return 'Проверять нечего: модель не ответила.';
+      if (stage.state === 'failed') return `На этом шаге запрос упал: ${trace.value.outcome.error}`;
+      return 'Шаг не выполнялся: запрос упал раньше.';
+    }
+
+    function jump(key) {
+      document.getElementById(`step-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    const timeSegments = computed(() => {
+      const s = steps.value, total = trace.value.totalMs;
+      const parts = [];
+      if (s.rewrite?.decision.enabled) parts.push({ label: 'Query rewrite', value: s.rewrite.durationMs, color: 'var(--viz-5)' });
+      if (s.embedding) parts.push({ label: 'Эмбеддинг вопроса', value: s.embedding.durationMs, color: 'var(--viz-1)' });
+      if (s.rerank) parts.push({ label: 'Реранкинг', value: s.rerank.durationMs, color: 'var(--viz-4)' });
+      const local = (s.search?.durationMs || 0) + (s.prompt?.durationMs || 0) + (s.grounding?.durationMs || 0);
+      if (s.search) parts.push({ label: 'Поиск, промпт и проверка', value: local, color: 'var(--viz-3)' });
+      if (s.llm) parts.push({ label: 'Ответ модели', value: s.llm.durationMs, color: 'var(--viz-2)' });
+      const rest = Math.max(0, total - parts.reduce((n, p) => n + p.value, 0));
+      parts.push({ label: 'Остальное', value: rest, color: 'var(--viz-rest)' });
+      return parts;
+    });
+
+    const PROMPT_COLORS = { 'Правила': 'var(--viz-1)', 'Контекст и история': 'var(--viz-2)', 'Вопрос': 'var(--viz-3)' };
+    const promptSegments = computed(() =>
+      (steps.value.prompt?.parts || []).map(p => ({ label: p.label, value: p.chars, color: PROMPT_COLORS[p.label] })));
+
+    function share(value, segments) {
+      const total = segments.reduce((n, s) => n + s.value, 0);
+      return `${Math.round(value / total * 100)}%`;
+    }
+
+    const vectorMax = computed(() => Math.max(...(steps.value.embedding?.vector || [1]).map(Math.abs)));
+
+
+    function diverging(v) {
+      const t = Math.max(-1, Math.min(1, v / vectorMax.value));
+      const mid = [240, 239, 236], pos = [42, 120, 214], neg = [227, 73, 72];
+      const end = t >= 0 ? pos : neg, k = Math.abs(t);
+      const c = mid.map((m, i) => Math.round(m + (end[i] - m) * k));
+      return `rgb(${c[0]},${c[1]},${c[2]})`;
+    }
+
+
+    const vectorColors = computed(() => (steps.value.embedding?.vector || []).map(diverging));
+
+    function vectorTip(event) {
+      const vector = steps.value.embedding.vector;
+      const box = event.currentTarget.getBoundingClientRect();
+      const i = Math.min(vector.length - 1, Math.max(0, Math.floor((event.clientX - box.left) / box.width * vector.length)));
+      tip(event, `Координата ${i + 1} из ${vector.length}: ${vector[i].toFixed(5)}`);
+    }
+
+    const searchStats = computed(() => {
+      const scores = steps.value.search?.scores || [];
+      if (!scores.length) return {};
+      const k = steps.value.search.topK;
+      return {
+        best: scores[0],
+        cut: scores[k - 1],
+        median: scores[Math.floor(scores.length / 2)],
+        gap: scores[0] - scores[Math.min(9, scores.length - 1)],
+      };
+    });
+
+    const histogram = computed(() => {
+      const search = steps.value.search, g = H.value;
+      if (!search) return { bins: [], xTicks: [], yTicks: [], cutX: 0 };
+      const scores = search.scores, width = 0.01;
+      const lo = Math.floor(scores[scores.length - 1] / width) * width;
+      const hi = Math.ceil((scores[0] + 1e-9) / width) * width;
+      const count = Math.round((hi - lo) / width);
+      const bins = Array.from({ length: count }, (_, i) => ({ index: i, from: lo + i * width, rest: 0, selected: 0 }));
+      scores.forEach((score, rank) => {
+        const bin = bins[Math.min(count - 1, Math.floor((score - lo) / width))];
+        if (rank < search.topK) bin.selected++; else bin.rest++;
+      });
+      const maxCount = Math.max(...bins.map(b => b.rest + b.selected));
+      const plotW = g.w - g.left - g.right;
+      const x = v => g.left + (v - lo) / (hi - lo) * plotW;
+      const y = n => g.top + g.plot - n / maxCount * g.plot;
+      const step = plotW / count;
+      bins.forEach(b => {
+        b.x = g.left + b.index * step;
+        b.w = step;
+        const bx = b.x + 1, bw = Math.max(1, step - 2);
+        const total = b.rest + b.selected;
+        b.restPath = b.rest ? barPath(bx, y(b.rest), bw, g.top + g.plot - y(b.rest), b.selected ? 0 : 3) : '';
+        b.selectedPath = b.selected ? barPath(bx, y(total), bw, y(b.rest) - y(total) - (b.rest ? 2 : 0), 3) : '';
+        b.tooltip = `${b.from.toFixed(2)}–${(b.from + width).toFixed(2)}: ${total} ${plural(total, 'чанк', 'чанка', 'чанков')}` +
+          (b.selected ? `\nиз них в промпт: ${b.selected}` : '');
+      });
+      const xTicks = [];
+      for (let v = Math.ceil(lo / 0.05) * 0.05; v <= hi + 1e-9; v += 0.05) xTicks.push({ value: v, x: x(v), label: v.toFixed(2) });
+      const yTicks = [0, Math.ceil(maxCount / 2), maxCount].filter((v, i, a) => a.indexOf(v) === i).map(v => ({ value: v, y: y(v) }));
+      return { bins, xTicks, yTicks, cutX: x(scores[search.topK - 1]) };
+    });
+
+
+    function barPath(x, y, w, h, r) {
+      if (h <= 0) return '';
+      r = Math.min(r, w / 2, h);
+      return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+    }
+
+    function splitCitations(text) {
+      const parts = [];
+      const pattern = /\[(\d+(?:\s*[,;]\s*\d+)*)\]/g;
+      let last = 0;
+      for (const match of text.matchAll(pattern)) {
+        if (match.index > last) parts.push({ text: text.slice(last, match.index) });
+        parts.push({ text: match[0], cite: true, numbers: match[1].split(/[,;]/).map(n => Number(n.trim())) });
+        last = match.index + match[0].length;
+      }
+      if (last < text.length) parts.push({ text: text.slice(last) });
+      return parts;
+    }
+
+    const citedNumbers = computed(() => {
+      if (trace.value?.outcome.status !== 'answered') return [];
+      const numbers = splitCitations(trace.value.outcome.answer).filter(p => p.cite).flatMap(p => p.numbers);
+      return [...new Set(numbers)].sort((a, b) => a - b);
+    });
+
+    function citeTitle(numbers) {
+      const candidates = steps.value.rerank?.candidates || [];
+      return numbers.map(n => {
+        const c = candidates.find(c => c.rank === n && c.selected);
+        return c ? `[${n}] ${c.title} · BGE ${c.rerankScore.toFixed(3)}` : `[${n}] — такого фрагмента не было`;
+      }).join('\n');
+    }
+
+
+    function lineClass(line) {
+      if (/^\[\d+\] /.test(line)) return 'frag';
+      if (line.startsWith('Текущий вопрос: ')) return 'hl';
+      return '';
+    }
+
+    function pretty(raw) {
+      try {
+        const value = JSON.parse(raw);
+        if (Array.isArray(value.embeddings)) {
+          value.embeddings = value.embeddings.map(v => [...v.slice(0, 6), `… ещё ${v.length - 6} чисел`]);
+        }
+        return JSON.stringify(value, null, 2);
+      } catch {
+        return raw;
+      }
+    }
+
+    const headers = h => Object.entries(h).map(([k, v]) => `${k}: ${v}`).join('\n');
+    const prefixOf = input => (input.match(/^\S+:\s/) || [''])[0];
+    const num = v => v == null ? '—' : Number(v).toLocaleString('ru-RU');
+    const fmt = v => v == null ? '—' : v.toFixed(3);
+    const fmt2 = v => v == null ? '—' : v.toFixed(2);
+    const statusLabel = status => STATUS[status]?.[0] ?? status;
+    const statusTone = status => STATUS[status]?.[1] ?? 'neutral';
+
+
+    function ms(value) {
+      if (value == null) return '—';
+      if (value < 1) return `${value.toFixed(2)}\u00a0мс`;
+      if (value < 1000) return `${Math.round(value)}\u00a0мс`;
+      return `${(value / 1000).toFixed(1)}\u00a0с`;
+    }
+
+    function rewriteLabel(status) { return {rewritten: 'переформулирован', unchanged: 'без изменений', disabled: 'выключено', fallback: 'резервный запрос'}[status]; }
+    const time = at => new Date(at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const dateTime = at => new Date(at).toLocaleString('ru-RU');
+
+    function plural(value, one, few, many) {
+      const n = Number(value), mod10 = n % 10, mod100 = n % 100;
+      if (mod10 === 1 && mod100 !== 11) return one;
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+      return many;
+    }
+
+    function tip(event, text) {
+      tooltip.value = { text, x: Math.min(event.clientX + 14, window.innerWidth - 300), y: event.clientY + 14 };
+    }
+
+    function untip() {
+      tooltip.value = { text: '', x: 0, y: 0 };
+    }
+
+    return {
+      H, observeChart, traces, selectedId, trace, knowledge, question, rewriteLabel, busy, loadError, tooltip, selectedModel, traceModels,
+      open, probe, steps, failed, failedStage, stages, stageName, missingNote, jump, statusLabel, statusTone, fmt2,
+      timeSegments, promptSegments, share, vectorMax, vectorColors, vectorTip, searchStats, histogram,
+      splitCitations, citedNumbers, citeTitle, lineClass, pretty, headers, prefixOf, num, fmt, ms, time, dateTime,
+      plural, tip, untip,
+    };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
