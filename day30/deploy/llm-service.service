@@ -1,0 +1,21 @@
+[Unit]
+Description=Day 30: private LLM service (OpenAI-compatible API over Ollama)
+After=network-online.target ollama.service
+Wants=ollama.service
+
+[Service]
+User=llm
+Group=llm
+# Ключи доступа и модель. Файл создаёт deploy.sh, права 600, в репозиторий не попадает.
+EnvironmentFile=/etc/llm-service.env
+# Куча 128 МБ и только C1-компилятор: памяти на машине 2 ГБ, и почти вся она — под модель.
+ExecStart=/usr/bin/java -Xmx128m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -jar /opt/llm-service/llm-service.jar
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

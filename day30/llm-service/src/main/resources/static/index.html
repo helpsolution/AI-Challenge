@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Приватная LLM — день 30</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/system.css">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<style>
+  .nav .chip svg { width: 12px; height: 12px; }
+  .host { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--color-text-secondary); display: inline-flex; align-items: center; gap: 6px; }
+  .host svg { width: 14px; height: 14px; color: var(--color-success); }
+  .page { max-width: 1440px; margin: 0 auto; padding: var(--space-5) var(--space-6); }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 760px; gap: var(--space-5); height: calc(100vh - 64px - 2 * var(--space-5)); min-height: 640px; }
+  .panel { padding: var(--space-5); gap: var(--space-4); min-height: 0; }
+  .panel:hover { border-color: var(--color-border); }
+  .panel-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+  .panel-head .card-title { margin-right: auto; }
+  .muted { color: var(--color-text-muted); }
+  .mono { font-family: var(--font-mono); }
+
+  /* Чат */
+  .chat { display: flex; flex-direction: column; }
+  .ctx { display: flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-text-secondary); }
+  .ctx-bar { width: 120px; height: 6px; border-radius: 3px; background: var(--color-elevated); overflow: hidden; }
+  .ctx-bar i { display: block; height: 100%; background: var(--color-info); transition: width .3s; }
+  .ctx-bar i.warn { background: var(--color-warning); }
+  .ctx-bar i.over { background: var(--color-danger); }
+  .system-line { margin: 0; font-size: 0.8125rem; color: var(--color-text-muted); }
+  .system-line b { font-weight: 500; color: var(--color-text-secondary); }
+  .messages { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-3);
+              padding: var(--space-1) var(--space-1) var(--space-2); }
+  .msg { max-width: 86%; display: flex; flex-direction: column; gap: 6px; }
+  .msg.user { align-self: flex-end; align-items: flex-end; }
+  .bubble { padding: 10px 14px; border-radius: 14px; font-size: 0.9375rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.user .bubble { background: var(--color-primary); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.user.failed .bubble { background: var(--color-elevated); color: var(--color-text-secondary); }
+  .msg.assistant .bubble { background: var(--color-elevated); color: var(--color-text-primary); border-bottom-left-radius: 4px; }
+  .msg.assistant.error .bubble { background: var(--color-danger-soft); color: var(--color-danger); }
+  .cursor { display: inline-block; width: 7px; height: 1em; margin-left: 2px; vertical-align: -2px; background: var(--color-text-muted); animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-text-muted); padding-inline: 4px; }
+  .meta b { font-weight: 500; color: var(--color-text-secondary); }
+  .link-btn { appearance: none; border: 0; background: none; padding: 0; color: var(--color-primary); font: inherit; cursor: pointer; }
+  .empty { margin: auto 0; display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4) var(--space-2); }
+  .empty h2 { margin: 0; font-size: 1.125rem; font-weight: 600; }
+  .empty p { margin: 0; color: var(--color-text-secondary); font-size: 0.9rem; line-height: 1.55; }
+  .examples { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .example { appearance: none; border: 1px solid var(--color-border-strong); background: var(--color-surface); border-radius: var(--radius-full);
+             padding: 7px 14px; font: inherit; font-size: 0.875rem; color: var(--color-text-primary); cursor: pointer; }
+  .example:hover { background: var(--color-elevated); }
+  .curl { margin: 0; padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-background);
+          font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.6; color: var(--color-text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .composer { display: flex; gap: var(--space-2); align-items: flex-end; }
+  .composer .textarea { flex: 1; min-height: 48px; height: 48px; max-height: 160px; resize: none; padding: 12px 14px; font-size: 0.9375rem; }
+  .composer .btn { height: 48px; }
+
+  /* Сервис */
+  .side { display: flex; flex-direction: column; gap: var(--space-4); min-height: 0; }
+  .service-card { flex: none; padding: var(--space-4) var(--space-5); gap: var(--space-3); }
+  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+  .tile { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; position: relative; overflow: hidden; }
+  .tile::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 2px; background: var(--color-info); }
+  .tile[data-tone="success"]::before { background: var(--color-success); }
+  .tile[data-tone="warning"]::before { background: var(--color-warning); }
+  .tile[data-tone="danger"]::before { background: var(--color-danger); }
+  .tile-label { font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-secondary); }
+  .tile-value { font-family: var(--font-mono); font-size: 1.375rem; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .tile-value small { font-size: 0.8125rem; font-weight: 500; color: var(--color-text-muted); }
+  .tile-foot { font-size: 0.75rem; color: var(--color-text-muted); }
+  .slots { display: flex; gap: 4px; margin-top: 2px; }
+  .slots i { width: 14px; height: 6px; border-radius: 3px; background: var(--color-elevated); border: 1px solid var(--color-border); }
+  .slots i.on { background: var(--color-success); border-color: var(--color-success); }
+  .slots i.wait { background: var(--color-warning); border-color: var(--color-warning); }
+  .counters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .counters .t-label { font-size: 0.75rem; color: var(--color-text-muted); margin-right: 2px; }
+
+  .checks-bar { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+  .checks-bar .btn { height: 34px; font-size: 0.8125rem; }
+  .checks-bar .btn svg { width: 15px; height: 15px; }
+  .check-summary { font-size: 0.8125rem; color: var(--color-text-secondary); margin: 0; line-height: 1.5; }
+  .check-summary b { font-weight: 600; color: var(--color-text-primary); }
+  .scroll { min-height: 0; overflow: auto; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+  .checks-card { flex: 0 1 auto; max-height: 410px; }
+  .journal-card { flex: 1 1 0; min-height: 200px; }
+  .checks-card, .journal-card { min-height: 0; }
+  .checks-card .scroll, .journal-card .scroll { flex: 1; }
+  table.grid { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+  .grid th { position: sticky; top: 0; z-index: 1; background: var(--color-surface); text-align: left; font-size: 0.6875rem; font-weight: 600; color: var(--color-text-muted);
+             padding: 7px 10px; border-bottom: 1px solid var(--color-border); white-space: nowrap; }
+  .grid td { padding: 5px 10px; border-bottom: 1px solid var(--color-border); vertical-align: middle; height: 34px; }
+  .grid tr:last-child td { border-bottom: 0; }
+  .grid .num { font-family: var(--font-mono); font-size: 0.75rem; text-align: right; white-space: nowrap; }
+  .grid th.num { text-align: right; }
+  .grid .idx { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-text-muted); width: 28px; }
+  .grid .chip { height: 22px; padding-inline: 8px; font-size: 0.7rem; }
+  .grid .ask { white-space: nowrap; }
+  .grid .note { font-size: 0.75rem; color: var(--color-text-secondary); line-height: 1.45; }
+  .grid td.fill { width: 100%; max-width: 0; }
+  .grid .note.clip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .grid .note.wide { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .state { font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-text-muted); white-space: nowrap; }
+  .placeholder { padding: var(--space-5); text-align: center; color: var(--color-text-muted); font-size: 0.8125rem; }
+
+  /* Ключ */
+  .overlay { position: fixed; inset: 0; z-index: 20; background: rgba(15, 18, 25, 0.35); display: grid; place-items: center; padding: var(--space-4); }
+  .key-card { width: min(440px, 100%); box-shadow: 0 16px 48px rgba(15, 18, 25, 0.16); }
+  .key-card .input { font-family: var(--font-mono); }
+
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: minmax(0, 1fr); height: auto; }
+    .chat { height: 78vh; }
+    .side { min-height: auto; }
+    .scroll { max-height: 420px; }
+  }
+  @media (max-width: 640px) {
+    .page { padding: var(--space-3) var(--space-4); }
+    .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .msg { max-width: 94%; }
+    .nav .chip.hide-sm { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+  <nav class="nav">
+    <div class="nav-brand"><div class="nav-mark">AI</div><span>Приватная LLM</span></div>
+    <span class="chip" data-tone="info" v-if="status">{{ status.model }}</span>
+    <span class="chip hide-sm" data-tone="neutral" v-if="status && status.ollamaVersion">Ollama {{ status.ollamaVersion }}</span>
+    <span class="chip" data-tone="danger" v-if="status && status.ollamaError">Ollama недоступна</span>
+    <span class="host hide-sm">
+      <svg v-if="secure" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      {{ origin }}
+    </span>
+    <div class="nav-spacer"></div>
+    <span class="chip" data-tone="neutral" v-if="status">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></svg>
+      ключ «{{ status.client }}»
+    </span>
+    <button class="btn btn-tertiary btn-sm" @click="logout">Сменить ключ</button>
+  </nav>
+
+  <main class="page">
+    <div class="layout">
+      <!-- Чат -->
+      <section class="card panel chat">
+        <div class="panel-head">
+          <h2 class="card-title">Чат</h2>
+          <div class="ctx" v-if="limits" :title="'Сколько токенов займёт история в следующем запросе. Окно модели — ' + limits.contextTokens">
+            <span>контекст</span>
+            <span class="ctx-bar"><i :class="ctxClass" :style="{ width: ctxPercent + '%' }"></i></span>
+            <span>{{ contextUsed }} / {{ limits.contextTokens }}</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" :disabled="sending || !messages.length" @click="newChat">Новый чат</button>
+        </div>
+        <p class="system-line"><b>Системный промпт:</b> {{ system }}</p>
+
+        <div class="messages" ref="messages">
+          <div class="empty" v-if="!messages.length">
+            <h2>Модель работает на VPS: 1 ядро, 2 ГБ памяти</h2>
+            <p>Запросы идут по HTTPS в сервис на Spring Boot, он проверяет ключ, лимиты и очередь и передаёт их в Ollama на том же сервере.
+               Наружу Ollama не открыта. Это же API доступно любому OpenAI-клиенту:</p>
+            <pre class="curl">{{ curlExample }}</pre>
+            <div class="examples">
+              <button class="example" v-for="e in examples" :key="e" @click="send(e)">{{ e }}</button>
+            </div>
+          </div>
+
+          <div v-for="(m, i) in messages" :key="i" class="msg" :class="[m.role, { error: m.error, failed: m.failed }]">
+            <div class="bubble" v-if="m.error"><b>{{ m.error.status }} {{ m.error.code }}</b> — {{ m.error.message }}</div>
+            <div class="bubble" v-else><span v-html="m.role === 'assistant' ? markdown(m.content) : escape(m.content)"></span><span v-if="m.pending" class="cursor"></span></div>
+            <div class="meta" v-if="m.pending && !m.content">ждёт модель…</div>
+            <div class="meta" v-if="m.stats">
+              <span><b>{{ m.stats.completion }}</b> ток.</span>
+              <span><b>{{ fmt1(m.stats.tps) }}</b> ток/с</span>
+              <span>очередь <b>{{ sec(m.stats.queue) }}</b></span>
+              <span>первый токен <b>{{ sec(m.stats.first) }}</b></span>
+              <span>всего <b>{{ sec(m.stats.total) }}</b></span>
+              <span v-if="m.stats.finish === 'length'" style="color: var(--color-warning)">обрезан по max_tokens</span>
+            </div>
+            <div class="meta" v-if="m.error && m.retry"><button class="link-btn" :disabled="sending" @click="send(m.retry)">Отправить ещё раз</button></div>
+          </div>
+        </div>
+
+        <form class="composer" @submit.prevent="send()">
+          <textarea class="textarea" v-model="input" placeholder="Сообщение модели · Enter — отправить"
+                    @keydown.enter.exact.prevent="send()"></textarea>
+          <button class="btn btn-primary" :disabled="sending || !input.trim()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 21.7a.5.5 0 0 0 .9-.1l6.5-19a.5.5 0 0 0-.6-.6l-19 6.5a.5.5 0 0 0-.1.9l7.9 3.2a2 2 0 0 1 1.1 1.1z"/><path d="m21.9 2.1-11 11"/></svg>
+            Отправить
+          </button>
+        </form>
+      </section>
+
+      <!-- Сервис -->
+      <div class="side">
+        <section class="card panel service-card">
+          <div class="panel-head">
+            <h2 class="card-title">Сервис</h2>
+            <div class="counters" v-if="status">
+              <span class="t-label">с запуска</span>
+              <span v-for="c in counters" :key="c.status" class="chip" :data-tone="c.tone">{{ c.label }} × {{ c.count }}</span>
+              <span v-if="!counters.length" class="muted" style="font-size: 0.75rem">запросов не было</span>
+            </div>
+          </div>
+          <div class="tiles" v-if="status">
+            <div class="tile" :data-tone="status.queue.waiting ? 'warning' : 'success'">
+              <span class="tile-label">Очередь</span>
+              <span class="tile-value">{{ status.queue.active }}<small> / {{ limits.parallel }}</small></span>
+              <div class="slots">
+                <i v-for="n in limits.parallel" :key="'a' + n" :class="{ on: n <= status.queue.active }"></i>
+                <i v-for="n in limits.maxWaiting" :key="'w' + n" :class="{ wait: n <= status.queue.waiting }"></i>
+              </div>
+              <span class="tile-foot">ждут {{ status.queue.waiting }} из {{ limits.maxWaiting }}</span>
+            </div>
+            <div class="tile" :data-tone="status.quota.remaining ? 'info' : 'danger'">
+              <span class="tile-label">Лимит ключа</span>
+              <span class="tile-value">{{ status.quota.remaining }}<small> / {{ limits.rateLimitRequests }}</small></span>
+              <span class="tile-foot">{{ status.quota.resetSeconds ? 'место через ' + status.quota.resetSeconds + ' с' : 'окно ' + limits.rateLimitWindowSeconds + ' с' }}</span>
+            </div>
+            <div class="tile">
+              <span class="tile-label">Окно контекста</span>
+              <span class="tile-value">{{ limits.contextTokens }}<small> ток.</small></span>
+              <span class="tile-foot">ответ ≤ {{ limits.maxOutputTokens }} ток.</span>
+            </div>
+            <div class="tile" :data-tone="memoryTone">
+              <span class="tile-label">Память сервера</span>
+              <template v-if="status.memory">
+                <span class="tile-value">{{ gb(status.memory.totalBytes - status.memory.availableBytes) }}<small> / {{ gb(status.memory.totalBytes) }} ГБ</small></span>
+                <span class="tile-foot">{{ status.loaded ? 'модель ' + gb(status.loaded.sizeBytes) : 'модель не загружена' }} · swap {{ gb(status.memory.swapUsedBytes) }}</span>
+              </template>
+              <template v-else>
+                <span class="tile-value">{{ status.loaded ? gb(status.loaded.sizeBytes) : '—' }}<small v-if="status.loaded"> ГБ</small></span>
+                <span class="tile-foot">{{ status.loaded ? 'модель в памяти' : 'модель не загружена' }}</span>
+              </template>
+            </div>
+          </div>
+          <div class="placeholder" v-else>{{ statusError || 'Загрузка статуса…' }}</div>
+        </section>
+
+        <section class="card panel checks-card">
+          <div class="panel-head">
+            <h2 class="card-title">Проверки</h2>
+            <div class="checks-bar">
+              <button class="btn btn-secondary" :disabled="running" @click="runParallel">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+                {{ parallelQuestions.length }} запросов разом
+              </button>
+              <button class="btn btn-secondary" :disabled="running" @click="runLongContext">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+                Длинный контекст
+              </button>
+              <button class="btn btn-secondary" :disabled="running" @click="runRateLimit">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+                Rate limit
+              </button>
+            </div>
+          </div>
+          <p class="check-summary" v-if="check" v-html="check.summary"></p>
+          <div class="scroll" v-if="check">
+            <table class="grid">
+              <thead>
+                <tr><th>№</th><th>Запрос</th><th>Статус</th><th class="num">Очередь</th><th class="num">1-й токен</th><th class="num">Всего</th><th>Ответ сервиса</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in check.rows" :key="r.n">
+                  <td class="idx">{{ r.n }}</td>
+                  <td class="ask">{{ r.label }}</td>
+                  <td>
+                    <span v-if="r.status" class="chip" :data-tone="tone(r.status)">{{ statusLabel(r.status, r.code) }}</span>
+                    <span v-else class="state">{{ r.state }}</span>
+                  </td>
+                  <td class="num">{{ r.queue != null ? sec(r.queue) : '' }}</td>
+                  <td class="num">{{ r.first != null ? sec(r.first) : '' }}</td>
+                  <td class="num">{{ r.total != null ? sec(r.total) : '' }}</td>
+                  <td class="fill"><span class="note" :class="r.wide ? 'wide' : 'clip'" :title="r.note || r.text">{{ r.note || r.text }}</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="placeholder" v-else>
+            Три проверки сервиса из задания: несколько запросов одновременно, запрос длиннее окна контекста и серия запросов до rate limit.
+          </div>
+        </section>
+
+        <section class="card panel journal-card">
+          <div class="panel-head">
+            <h2 class="card-title">Журнал запросов</h2>
+            <span class="muted" style="font-size: 0.75rem">все клиенты, последние {{ recent.length }}</span>
+          </div>
+          <div class="scroll" v-if="recent.length">
+            <table class="grid">
+              <thead>
+                <tr><th>Время</th><th>Ключ</th><th>Статус</th><th class="num">Токены</th><th class="num">Очередь</th><th class="num">1-й токен</th><th class="num">Всего</th><th class="num">ток/с</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(r, i) in recent" :key="r.at + i">
+                  <td class="num" style="text-align: left">{{ clock(r.at) }}</td>
+                  <td>{{ r.client }}</td>
+                  <td><span class="chip" :data-tone="tone(r.status)">{{ statusLabel(r.status, r.code) }}</span></td>
+                  <td class="num">{{ r.promptTokens != null ? r.promptTokens + ' → ' + r.completionTokens : '' }}</td>
+                  <td class="num">{{ r.queueMs != null ? sec(r.queueMs) : '' }}</td>
+                  <td class="num">{{ r.firstTokenMs != null ? sec(r.firstTokenMs) : '' }}</td>
+                  <td class="num">{{ sec(r.totalMs) }}</td>
+                  <td class="num">{{ r.tokensPerSecond != null ? fmt1(r.tokensPerSecond) : '' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="placeholder" v-else>Здесь появятся запросы от всех клиентов: из этого чата, curl и любых OpenAI-клиентов.</div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <div class="overlay" v-if="askKey">
+    <form class="card key-card" @submit.prevent="login">
+      <h2 class="card-title">Ключ доступа</h2>
+      <p class="card-body">Сервис приватный: каждый запрос несёт ключ в заголовке <span class="mono">Authorization</span>.
+        Ключ хранится только в этом браузере.</p>
+      <div class="field">
+        <input class="input" :class="{ 'is-invalid': keyError }" type="password" v-model="keyInput" placeholder="Ключ" autocomplete="off" autofocus>
+        <span class="field-help is-error" v-if="keyError">{{ keyError }}</span>
+      </div>
+      <div class="card-footer"><button class="btn btn-primary" :disabled="!keyInput.trim()">Войти</button></div>
+    </form>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script>
+const SYSTEM = 'Ты — полезный ассистент. Отвечай кратко и по-русски.';
+const EXAMPLES = [
+  'Объясни простыми словами, что такое HTTP API',
+  'Придумай три названия для кофейни у моря',
+  'Чем Docker отличается от виртуальной машины?',
+];
+const PARALLEL_QUESTIONS = [
+  'Столица Италии?',
+  'Сколько дней в неделе?',
+  'Назови любой фрукт.',
+  'Какого цвета небо днём?',
+  'Сколько будет 2 + 2?',
+  'Назови любую планету.',
+];
+// ≈ 80 токенов gemma3. Сорок повторов — около 3 250 токенов: в полтора раза больше окна в 2 048.
+const LONG_PARAGRAPH = 'Первые электронные вычислительные машины занимали целые залы, потребляли сотни киловатт и ' +
+  'выполняли несколько тысяч операций в секунду. Программы для них записывали на перфокартах, а результат ждали ' +
+  'часами. Транзисторы, затем интегральные схемы и микропроцессоры уменьшили компьютер до размеров стола, а ' +
+  'потом и до кармана. ';
+const LONG_REPEATS = 40;
+
+const STATUS_LABELS = {
+  rate_limit_exceeded: '429 лимит', queue_full: '503 очередь', context_length_exceeded: '400 окно',
+  invalid_api_key: '401 ключ', client_closed: '499 обрыв', model_unavailable: '502 модель', invalid_request: '400 запрос',
+};
+
+function readKey() { try { return localStorage.getItem('llm-key') || ''; } catch { return ''; } }
+function storeKey(key) { try { key ? localStorage.setItem('llm-key', key) : localStorage.removeItem('llm-key'); } catch { /* приватный режим */ } }
+
+class ApiError extends Error {
+  constructor(status, code, message, headers, ms) {
+    super(message);
+    Object.assign(this, { status, code, headers, ms });
+  }
+}
+
+/**
+ * Один вызов /v1/chat/completions. При stream: true читает SSE и отдаёт куски текста в onDelta.
+ * Возвращает текст, usage, timings сервера, заголовки и время, измеренное браузером.
+ */
+async function complete(key, body, onDelta) {
+  const started = performance.now();
+  const res = await fetch('/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let error = { code: 'http_' + res.status, message: res.statusText };
+    try { error = (await res.json()).error || error; } catch { /* не JSON */ }
+    throw new ApiError(res.status, error.code, error.message, res.headers, performance.now() - started);
+  }
+  if (!body.stream) {
+    const data = await res.json();
+    return { text: data.choices[0].message.content, finish: data.choices[0].finish_reason, usage: data.usage,
+             timings: data.timings, headers: res.headers, ms: performance.now() - started, firstMs: null };
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '', text = '', firstMs = null, last = null;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let cut;
+    while ((cut = buffer.indexOf('\n\n')) >= 0) {
+      const event = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      if (!event.startsWith('data: ')) continue;
+      const payload = event.slice(6);
+      if (payload === '[DONE]') continue;
+      const chunk = JSON.parse(payload);
+      if (chunk.error) throw new ApiError(200, chunk.error.code, chunk.error.message, res.headers, performance.now() - started);
+      const choice = chunk.choices[0];
+      if (choice.delta.content) {
+        if (firstMs == null) firstMs = performance.now() - started;
+        text += choice.delta.content;
+        onDelta && onDelta(choice.delta.content);
+      }
+      if (choice.finish_reason) last = chunk;
+    }
+  }
+  if (!last) throw new ApiError(200, 'stream_cut', 'Стрим оборвался без последнего куска', res.headers, performance.now() - started);
+  return { text, finish: last.choices[0].finish_reason, usage: last.usage, timings: last.timings, headers: res.headers,
+           ms: performance.now() - started, firstMs };
+}
+
+Vue.createApp({
+  data() {
+    return {
+      key: readKey(), keyInput: '', keyError: '', askKey: !readKey(),
+      status: null, statusError: '',
+      system: SYSTEM, examples: EXAMPLES, parallelQuestions: PARALLEL_QUESTIONS,
+      messages: [], input: '', sending: false, contextUsed: 0, contextOver: false,
+      check: null, running: false,
+      origin: location.host, secure: location.protocol === 'https:',
+    };
+  },
+  computed: {
+    limits() { return this.status && this.status.limits; },
+    recent() { return this.status ? this.status.recent : []; },
+    counters() {
+      if (!this.status) return [];
+      return Object.entries(this.status.counters).map(([status, count]) => ({
+        status, count, tone: this.tone(+status), label: status,
+      }));
+    },
+    ctxPercent() { return this.limits ? Math.min(100, this.contextOver ? 100 : this.contextUsed / this.limits.contextTokens * 100) : 0; },
+    ctxClass() { return this.contextOver ? 'over' : this.ctxPercent > 75 ? 'warn' : ''; },
+    memoryTone() {
+      const m = this.status && this.status.memory;
+      if (!m) return 'info';
+      return m.availableBytes / m.totalBytes < 0.15 ? 'danger' : m.availableBytes / m.totalBytes < 0.3 ? 'warning' : 'success';
+    },
+    curlExample() {
+      return `curl ${location.origin}/v1/chat/completions \\\n  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \\\n` +
+             `  -d '{"messages":[{"role":"user","content":"Привет!"}]}'`;
+    },
+  },
+  methods: {
+    async refresh() {
+      if (!this.key) return;
+      try {
+        const res = await fetch('/api/status', { headers: { 'Authorization': 'Bearer ' + this.key } });
+        if (res.status === 401) { this.askKey = true; this.keyError = 'Ключ больше не подходит'; return; }
+        if (!res.ok) throw new Error('Статус: HTTP ' + res.status);
+        this.status = await res.json();
+        this.statusError = '';
+      } catch (e) {
+        this.statusError = 'Сервис не отвечает: ' + e.message;
+      }
+    },
+    async login() {
+      const key = this.keyInput.trim();
+      const res = await fetch('/api/status', { headers: { 'Authorization': 'Bearer ' + key } }).catch(() => null);
+      if (!res) { this.keyError = 'Сервис не отвечает'; return; }
+      if (res.status === 401) { this.keyError = 'Ключ не подошёл'; return; }
+      this.key = key; storeKey(key);
+      this.keyInput = ''; this.keyError = ''; this.askKey = false;
+      this.status = await res.json();
+    },
+    logout() {
+      this.key = ''; storeKey('');
+      this.status = null; this.askKey = true; this.keyError = '';
+    },
+
+    async send(text) {
+      text = (text ?? this.input).trim();
+      if (!text || this.sending) return;
+      if (text === this.input.trim()) this.input = '';
+      this.sending = true;
+      // История — только удачные реплики: отказ сервиса в контекст модели не попадает.
+      const history = this.messages.filter(m => !m.error && !m.failed).map(m => ({ role: m.role, content: m.content }));
+      this.messages.push({ role: 'user', content: text });
+      const question = this.messages[this.messages.length - 1];
+      this.messages.push({ role: 'assistant', content: '', pending: true });
+      const reply = this.messages[this.messages.length - 1];
+      this.scrollDown();
+      try {
+        const r = await complete(this.key, {
+          model: this.status && this.status.model, stream: true,
+          messages: [{ role: 'system', content: SYSTEM }, ...history, { role: 'user', content: text }],
+        }, delta => { reply.content += delta; this.scrollDown(); });
+        reply.stats = { completion: r.usage.completion_tokens, tps: r.timings.tokens_per_second, queue: r.timings.queue_ms,
+                        first: r.firstMs, total: r.ms, finish: r.finish };
+        this.contextUsed = r.usage.total_tokens;
+        this.contextOver = false;
+      } catch (e) {
+        reply.error = { status: e.status, code: e.code, message: e.message };
+        reply.retry = text;
+        question.failed = true;
+        if (e.code === 'context_length_exceeded') this.contextOver = true;
+        if (e.status === 401) this.askKey = true;
+      } finally {
+        reply.pending = false;
+        this.sending = false;
+        this.scrollDown();
+        this.refresh();
+      }
+    },
+    newChat() { this.messages = []; this.contextUsed = 0; this.contextOver = false; },
+    scrollDown() { this.$nextTick(() => { const el = this.$refs.messages; if (el) el.scrollTop = el.scrollHeight; }); },
+
+    // Все запросы стартуют одновременно. Одна модель на одном ядре: первый генерируется, следующие ждут в очереди,
+    // а когда очередь полна — сервис сразу отвечает 503.
+    async runParallel() {
+      this.running = true;
+      const started = performance.now();
+      this.check = { summary: `Отправлено <b>${PARALLEL_QUESTIONS.length}</b> запросов одновременно…`,
+                     rows: PARALLEL_QUESTIONS.map((q, i) => ({ n: i + 1, label: q, state: 'отправлен', text: '' })) };
+      const rows = this.check.rows;
+      await Promise.all(rows.map(async row => {
+        try {
+          const r = await complete(this.key, {
+            stream: true, max_tokens: 24,
+            messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: row.label }],
+          }, delta => { row.state = 'генерирует'; row.text += delta; });
+          Object.assign(row, { status: 200, total: r.ms, queue: r.timings.queue_ms, first: r.firstMs });
+        } catch (e) {
+          Object.assign(row, { status: e.status, code: e.code, total: e.ms, note: e.message });
+        }
+        this.refresh();
+      }));
+      const ok = rows.filter(r => r.status === 200).length;
+      const busy = rows.filter(r => r.status === 503).length;
+      const other = rows.length - ok - busy;
+      const limits = this.limits;
+      this.check.summary = `Ответили по очереди: <b>${ok}</b>, сразу получили 503: <b>${busy}</b>` +
+        (other ? `, другой отказ: <b>${other}</b>` : '') + ` · все за <b>${this.sec(performance.now() - started)}</b>. ` +
+        (limits ? `Модель генерирует ${limits.parallel} ответ за раз, ждать могут ${limits.maxWaiting}.` : '');
+      this.running = false;
+    },
+
+    // Текст длиннее окна: Ollama считает токены своим токенизатором и отказывает до генерации.
+    async runLongContext() {
+      this.running = true;
+      const text = LONG_PARAGRAPH.repeat(LONG_REPEATS);
+      const chars = text.length.toLocaleString('ru-RU');
+      this.check = { summary: `Отправлен текст на <b>${chars}</b> символов…`,
+                     rows: [{ n: 1, label: `Пересказ ${chars} символов`, state: 'отправлен' }] };
+      const row = this.check.rows[0];
+      try {
+        const r = await complete(this.key, { stream: true, messages: [{ role: 'user', content: 'Кратко перескажи текст:\n\n' + text }] });
+        Object.assign(row, { status: 200, total: r.ms, note: `Поместился: ${r.usage.prompt_tokens} токенов промпта` });
+      } catch (e) {
+        Object.assign(row, { status: e.status, code: e.code, total: e.ms, note: e.message, wide: true });
+      }
+      this.check.summary = row.code === 'context_length_exceeded'
+        ? `Запрос отклонён за <b>${this.sec(row.total)}</b>, до генерации. Без <span class="mono">truncate: false</span> Ollama молча отрезала бы начало текста и ответила по обрывку.`
+        : `Результат: <b>${this.statusLabel(row.status, row.code)}</b>.`;
+      this.running = false;
+      this.refresh();
+    },
+
+    // Короткие запросы подряд, пока не кончится лимит ключа. Остаток — из заголовков ответа, как у OpenAI.
+    async runRateLimit() {
+      this.running = true;
+      this.check = { summary: 'Короткие запросы подряд, пока сервис не ответит 429…', rows: [] };
+      for (let n = 1; n <= 20; n++) {
+        this.check.rows.push({ n, label: 'ping · max_tokens 1', state: 'отправлен' });
+        const row = this.check.rows[this.check.rows.length - 1];
+        try {
+          const r = await complete(this.key, { max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] });
+          const left = r.headers.get('X-RateLimit-Remaining-Requests');
+          const limit = r.headers.get('X-RateLimit-Limit-Requests');
+          Object.assign(row, { status: 200, total: r.ms, queue: r.timings.queue_ms, note: `осталось ${left} из ${limit}` });
+        } catch (e) {
+          const retry = e.headers && e.headers.get('Retry-After');
+          Object.assign(row, { status: e.status, code: e.code, total: e.ms, note: e.message });
+          if (e.status === 429) {
+            this.check.summary = `Лимит — <b>${this.limits.rateLimitRequests}</b> запросов за ${this.limits.rateLimitWindowSeconds} с на ключ. ` +
+              `Прошло: <b>${n - 1}</b>, следующий получил <b>429</b> с <span class="mono">Retry-After: ${retry}</span>. Другие ключи при этом работают.`;
+            break;
+          }
+        }
+      }
+      this.running = false;
+      this.refresh();
+    },
+
+    tone(status) {
+      if (status >= 200 && status < 300) return 'success';
+      if (status === 429 || status === 503 || status === 499) return 'warning';
+      return 'danger';
+    },
+    statusLabel(status, code) { return (code && STATUS_LABELS[code]) || String(status); },
+    sec(ms) { return ms == null ? '—' : (ms / 1000).toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' с'; },
+    fmt1(x) { return x == null ? '—' : x.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }); },
+    gb(bytes) { return (bytes / 1e9).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
+    clock(at) { return new Date(at).toLocaleTimeString('ru-RU'); },
+    escape(text) { return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
+    // Малые модели отвечают Markdown'ом. Текст сначала экранируется, потом размечаются только жирный, заголовки и списки.
+    markdown(text) {
+      return this.escape(text)
+        .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+        .replace(/^#{1,6}\s+(.*)$/gm, '<b>$1</b>')
+        .replace(/^(\s*)[*-]\s+/gm, '$1• ');
+    },
+  },
+  mounted() {
+    this.refresh();
+    setInterval(() => { if (!document.hidden && !this.askKey) this.refresh(); }, 1500);
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
