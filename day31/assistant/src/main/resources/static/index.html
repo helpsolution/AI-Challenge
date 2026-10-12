@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ассистент разработчика · День 31</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/system.css"><link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Ассистент разработчика"><span class="brand-icon">/</span><span>Project assistant <small>AI ADVENT · 31</small></span></a>
+    <div class="top-right"><span class="pill"><span class="dot"></span>Локальный проект</span><button class="text-button" @click="reset" :disabled="busy">Новый диалог ↗</button></div>
+  </header>
+  <div class="workspace">
+    <aside class="sidebar">
+      <div class="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</div>
+      <h2>{{project.name || 'AI Challenge'}}</h2>
+      <label class="field-label" for="scope">Проект для вопросов</label>
+      <select id="scope" v-model="scope" :disabled="busy" @change="changeScope">
+        <option value="repo">Весь репозиторий</option><option v-for="day in project.scopes" :key="day" :value="day">{{day}}</option>
+      </select>
+      <p class="scope-note">У каждого дня своя документация. Можно указать dayN прямо в вопросе.</p>
+      <div class="context-card"><div class="context-heading"><span class="tiny-icon">⑂</span> Контекст Git</div>
+        <div class="branch">{{branch || 'Запросим через MCP'}}</div><div class="caption">{{branchAt ? 'Обновлён ' + time(branchAt) : 'Обновляется при каждом вопросе'}}</div>
+      </div>
+      <div class="index-card"><div class="context-heading">◫ База знаний <span class="status-dot" :class="project.indexError ? 'error' : ''"></span></div>
+        <div class="index-count"><strong>{{project.index?.documents || '—'}}</strong> документов <span>·</span> <strong>{{project.index?.chunks || '—'}}</strong> фрагментов</div>
+        <p class="caption">README + docs из репозитория</p>
+        <button class="text-button small" @click="rebuild" :disabled="busy || rebuilding">{{rebuilding ? 'Обновляем…' : 'Обновить индекс ↻'}}</button>
+      </div>
+      <div v-if="project.indexError" class="warning">{{project.indexError}}</div>
+      <div v-if="project.llmConfigured === false" class="warning">Для ответов по документации задайте DEEPSEEK_API_KEY в .env.</div>
+      <div class="sidebar-bottom"><div class="eyebrow">ПОДКЛЮЧЕНО</div><div class="connection">RAG <span>README · docs</span></div><div class="connection">MCP <span>Git · файлы</span></div><div class="connection">LLM <span>{{project.model || 'DeepSeek'}}</span></div></div>
+    </aside>
+    <main class="main">
+      <div class="main-heading"><div><div class="eyebrow">АССИСТЕНТ РАЗРАБОТЧИКА</div><h1>Разберёмся в проекте.</h1></div><span class="scope-chip">{{scope === 'repo' ? 'Весь репозиторий' : scope}}</span></div>
+      <section v-if="!turns.length" class="welcome">
+        <div class="welcome-symbol">⌘</div><h2>Документация и контекст.<br>В одном разговоре.</h2>
+        <p>Спросите, как устроен сервис, что нужно для запуска<br class="desktop-break"> или над какой веткой вы работаете.</p>
+        <div class="suggestions">
+          <button v-for="example in examples" :key="example.question" class="suggestion" @click="useExample(example)" :disabled="busy"><span class="suggestion-icon">{{example.icon}}</span><span><strong>{{example.title}}</strong><small>{{example.subtitle}}</small></span><span class="suggestion-arrow">↗</span></button>
+        </div>
+        <div class="welcome-footnote">Ответы по документации — с источниками. Git-контекст — через MCP.</div>
+      </section>
+      <section v-else class="feed" aria-live="polite">
+        <article v-for="(turn, index) in turns" :key="turn.key" class="turn">
+          <div class="user-message"><span class="message-label">ВЫ <span>{{turn.scope}}</span></span><div>{{turn.message}}</div></div>
+          <div class="assistant-message"><div class="assistant-label"><span class="avatar">/</span> PROJECT ASSISTANT <span v-if="turn.answer" class="result-tag" :class="turn.answer.status">{{statusLabel(turn.answer.status)}}</span></div>
+            <div v-if="!turn.answer && !turn.error" class="working"><span class="spinner"></span>{{turn.steps.at(-1)?.name || 'Собираем контекст проекта…'}}</div>
+            <p v-if="turn.error" class="warning">{{turn.error}}</p>
+            <template v-if="turn.answer">
+              <div class="answer-text"><template v-for="(part, pi) in segments(turn.answer.answer)" :key="pi"><button v-if="part.number" class="citation" @click="openSource(index, part.number)">[{{part.number}}]</button><span v-else>{{part.text}}</span></template></div>
+              <div v-for="warning in turn.answer.warnings" :key="warning" class="warning">{{warning}}</div>
+              <div class="answer-meta">{{sec(turn.answer.durationMs)}}<template v-if="turn.answer.model"> · {{turn.answer.model}} · {{turn.answer.promptTokens || 0}} → {{turn.answer.completionTokens || 0}} ток.</template><span> · {{turn.answer.scope}}</span></div>
+              <details v-if="turn.answer.sources.length" class="sources" :open="turn.showSources"><summary>{{turn.answer.sources.length}} {{plural(turn.answer.sources.length, 'источник', 'источника', 'источников')}} <span>Документы и данные MCP</span></summary>
+                <div class="source-list"><button v-for="source in turn.answer.sources" :key="source.number" class="source-row" :class="{'selected': turn.selected === source.number}" @click="turn.selected = source.number"><span class="source-number">{{source.number}}</span><div><strong>{{source.source}}</strong><small>{{source.kind === 'mcp' ? 'Контекст · ' + time(source.capturedAt) : (source.section || 'Введение') + ' · строки ' + source.lineStart + '–' + source.lineEnd}}</small></div><span v-if="cited(turn, source.number)" class="source-used">В ответе</span></button></div>
+                <div v-if="selectedSource(turn)" class="source-content"><div class="source-content-heading">Фрагмент [{{turn.selected}}]<a v-if="selectedSource(turn).kind === 'document'" :href="'/api/source?path=' + encodeURIComponent(selectedSource(turn).source)" target="_blank" rel="noopener">Открыть документ ↗</a></div><pre>{{selectedSource(turn).text}}</pre><div v-for="quote in turn.answer.quotes.filter(q => q.number === turn.selected)" class="verified-quote">✓ Цитата найдена в источнике<blockquote>{{quote.text}}</blockquote></div></div>
+              </details>
+            </template>
+            <details v-if="turn.steps.length" class="pipeline"><summary>Как получен ответ <span>{{turn.steps.length}} шагов</span></summary><div class="pipeline-steps"><div v-for="(step, si) in turn.steps" :key="si" class="pipeline-step"><span class="step-number" :class="step.status">{{step.status === 'error' ? '!' : si + 1}}</span><div><strong>{{step.name}}</strong><small>{{sec(step.durationMs)}}</small><details class="step-detail"><summary>Данные шага</summary><pre>{{JSON.stringify(step.detail, null, 2)}}</pre></details></div></div></div><a v-if="turn.answer" class="trace-link" :href="'/api/traces/' + turn.answer.id" target="_blank" rel="noopener">Трассировка JSON ↗</a></details>
+          </div>
+        </article>
+      </section>
+      <div class="composer-wrap"><form class="composer" @submit.prevent="ask()"><div class="command-mark">/help</div><textarea v-model="input" ref="editor" rows="2" maxlength="6000" aria-label="Вопрос о проекте" placeholder="Как устроен проект?" :disabled="busy" @keydown.enter.exact.prevent="ask()"></textarea><button class="send" type="submit" :disabled="busy || !input.trim()" :aria-label="busy ? 'Запрос выполняется' : 'Отправить вопрос'"><span v-if="busy" class="spinner"></span><span v-else>↑</span></button></form><div class="composer-note">Enter — отправить · Shift + Enter — новая строка <span>{{busy ? 'Выполняем пайплайн…' : 'История хранится в этом браузере'}}</span></div></div>
+    </main>
+  </div>
+  <div v-if="notice" class="toast" role="status">{{notice}}</div>
+</div>
+<script src="/vendor/vue.global.prod.js"></script><script src="/app.js"></script>
+</body>
+</html>
