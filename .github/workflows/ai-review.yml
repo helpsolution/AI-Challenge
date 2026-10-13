@@ -35,16 +35,21 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      # По умолчанию кэш пишется только из main, а workflow запускается только на PR: без записи он всегда пуст.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: false
 
       # Без Ollama ревьюер собирает контекст без семантического поиска — job продолжается.
       - name: Start Ollama with nomic-embed-text
         continue-on-error: true
         env:
-          OLLAMA_VERSION: 0.40.2
+          OLLAMA_VERSION: v0.40.2
         run: |
-          curl -fsSL https://ollama.com/install.sh | sh
+          curl -fsSL "https://github.com/ollama/ollama/releases/download/$OLLAMA_VERSION/ollama-linux-amd64.tar.zst" | zstd -d | sudo tar -x -C /usr/local
+          # systemd на раннере не запущен, install.sh сервер не поднимет: держим его фоном до конца job.
+          nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
           for i in $(seq 30); do curl -fs http://127.0.0.1:11434/api/version && break; sleep 1; done
           ollama pull nomic-embed-text
 
