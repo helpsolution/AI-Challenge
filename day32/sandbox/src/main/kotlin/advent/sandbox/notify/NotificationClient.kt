@@ -24,6 +24,8 @@ class NotificationClient(builder: RestClient.Builder, private val properties: No
 
     fun bookingCancelled(booking: Booking) = send("booking.cancelled", booking)
 
+    fun bookingMoved(booking: Booking) = send("booking.moved", booking)
+
     // Уведомление — побочный эффект: его сбой не отменяет бронь.
     private fun send(event: String, booking: Booking) {
         if (properties.url.isBlank()) return

@@ -32,6 +32,18 @@ class BookingService(
         notifications.bookingCancelled(booking)
     }
 
+    @Synchronized
+    fun reschedule(id: UUID, user: String, start: Instant, end: Instant): Booking {
+        val booking = repository.find(id) ?: throw BookingNotFound(id)
+        if (booking.owner != user) throw BookingForbidden("Перенести бронь может только её автор")
+        if (booking.start < clock.instant()) throw BookingConflict("Начавшуюся бронь перенести нельзя")
+        val moved = booking.copy(start = start, end = end)
+        validate(moved)
+        repository.save(moved)
+        notifications.bookingMoved(moved)
+        return moved
+    }
+
     fun list(roomId: String): List<Booking> = repository.findByRoom(roomId)
 
     private fun validate(booking: Booking) {
