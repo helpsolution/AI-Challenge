@@ -40,10 +40,10 @@ class BookingController(private val bookings: BookingService, private val availa
     fun cancel(@PathVariable id: UUID, @RequestHeader("X-User") user: String) = bookings.cancel(id, user)
 
     @PatchMapping("/bookings/{id}")
-    fun reschedule(@PathVariable id: UUID, @RequestBody request: BookingRequest): Booking {
+    fun reschedule(@PathVariable id: UUID, @RequestHeader("X-User") user: String, @RequestBody request: BookingRequest): Booking {
         val duration = Duration.between(request.start, request.end)
         if (duration.toMinutes() < 15 || duration.toHours() > 4) throw InvalidBooking("Бронь длится от 15 минут до 4 часов")
-        return bookings.reschedule(id, request.start, request.end)
+        return bookings.reschedule(id, user, request.start, request.end)
     }
 
     @GetMapping("/free")

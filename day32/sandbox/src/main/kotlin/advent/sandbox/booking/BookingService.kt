@@ -5,8 +5,6 @@ import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneId
 import java.util.UUID
 
 @Service
@@ -34,15 +32,13 @@ class BookingService(
         notifications.bookingCancelled(booking)
     }
 
-    fun reschedule(id: UUID, start: Instant, end: Instant): Booking {
+    @Synchronized
+    fun reschedule(id: UUID, user: String, start: Instant, end: Instant): Booking {
         val booking = repository.find(id) ?: throw BookingNotFound(id)
-        if (LocalDateTime.now().isAfter(LocalDateTime.ofInstant(booking.start, ZoneId.systemDefault()))) {
-            throw BookingConflict("Начавшуюся бронь перенести нельзя")
-        }
+        if (booking.owner != user) throw BookingForbidden("Перенести бронь может только её автор")
+        if (booking.start < clock.instant()) throw BookingConflict("Начавшуюся бронь перенести нельзя")
         val moved = booking.copy(start = start, end = end)
-        if (repository.findByRoom(booking.roomId).any { it.overlaps(start, end) }) {
-            throw BookingConflict("Переговорка занята")
-        }
+        validate(moved)
         repository.save(moved)
         notifications.bookingMoved(moved)
         return moved

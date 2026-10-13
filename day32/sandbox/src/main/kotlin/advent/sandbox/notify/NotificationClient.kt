@@ -34,7 +34,7 @@ class NotificationClient(builder: RestClient.Builder, private val properties: No
                 .body(mapOf("event" to event, "booking" to booking))
                 .retrieve().toBodilessEntity()
         } catch (e: RestClientException) {
-            log.warn("Уведомление {} о брони {} не отправлено (token={}): {}", event, booking.id, properties.token, e.message)
+            log.warn("Уведомление {} о брони {} не отправлено: {}", event, booking.id, e.message)
         }
     }
 }
