@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: day32-reviewer
+  main:
+    web-application-type: none
+    banner-mode: off
+    log-startup-info: false
+  config:
+    import: optional:file:.env[.properties]
+logging:
+  level:
+    root: warn
+    advent: info
+review:
+  # Корень репозитория в версии PR: из него читаются изменённые файлы, документация и код.
+  root: ${REVIEW_ROOT:..}
+  diff: ${REVIEW_DIFF:data/pr.diff}
+  output: ${REVIEW_OUTPUT:data/review.md}
+  # https://github.com/<owner>/<repo>/blob/<sha> — ссылки на строки; пусто — без ссылок.
+  link-base: ${REVIEW_LINK_BASE:}
+  rules: day32/docs/review-rules.md
+  docs-limit: 6
+  code-limit: 6
+  usages-limit: 8
+  # Файл длиннее показывается модели только участками diff, а не целиком.
+  full-file-lines: 600
+  llm-attempts: 3
+cloud-llm:
+  base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+  api-key: ${DEEPSEEK_API_KEY:}
+  model: ${DEEPSEEK_MODEL:deepseek-flash}
+  temperature: 0.1
+  max-tokens: 4000
+  timeout: 180s
+  # Пиковый тариф deepseek-flash, $ за миллион токенов: оценка сверху.
+  input-price: 0.30
+  output-price: 1.20
+ollama:
+  base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+  model: ${OLLAMA_EMBED_MODEL:nomic-embed-text}
+  timeout: 120s
+  document-prefix: "search_document: "
+  query-prefix: "search_query: "

@@ -1,0 +1,90 @@
+# День 32: AI-ревью pull request. Ревьюер — day32/reviewer, подробности — day32/README.md.
+name: AI review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# Токен job: читать код и писать комментарии в PR — больше ничего.
+permissions:
+  contents: read
+  pull-requests: write
+
+# Новый push в PR отменяет ревью предыдущей версии.
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # PR из форка не получает секреты и права на комментарий — для него ревью не запускается.
+    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # Без Ollama ревьюер собирает контекст без семантического поиска — job продолжается.
+      - name: Start Ollama with nomic-embed-text
+        continue-on-error: true
+        env:
+          OLLAMA_VERSION: 0.40.2
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          for i in $(seq 30); do curl -fs http://127.0.0.1:11434/api/version && break; sleep 1; done
+          ollama pull nomic-embed-text
+
+      - name: Build reviewer
+        working-directory: day32
+        run: ./gradlew --no-daemon :reviewer:bootJar
+
+      - name: Collect diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git -c core.quotePath=false diff --no-color "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/pr.diff"
+
+      - name: Review
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          REVIEW_LINK_BASE: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.event.pull_request.head.sha }}
+        run: >-
+          java -jar day32/reviewer/build/libs/reviewer.jar
+          --review.root=.
+          --review.diff="$RUNNER_TEMP/pr.diff"
+          --review.output="$RUNNER_TEMP/review.md"
+
+      # Ревью и его отказ публикуются одинаково: один комментарий с маркером, который обновляется при каждом push.
+      - name: Publish comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          body="$RUNNER_TEMP/review.md"
+          if [ ! -s "$body" ]; then echo "Ревью не сформировано"; exit 1; fi
+          cat "$body" >> "$GITHUB_STEP_SUMMARY"
+          payload=$(jq -n --rawfile body "$body" '{body: $body}')
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- ai-review -->"))) | .id' | head -n1)
+          if [ -n "$id" ]; then
+            echo "$payload" | gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" --input - > /dev/null
+            echo "Комментарий $id обновлён"
+          else
+            echo "$payload" | gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --input - > /dev/null
+            echo "Комментарий добавлен"
+          fi
