@@ -10,6 +10,6 @@ data class Booking(
     val start: Instant,
     val end: Instant,
 ) {
-    // Полуинтервал [start, end): встреча до 11:00 не мешает встрече с 11:00.
-    fun overlaps(from: Instant, to: Instant): Boolean = start < to && from < end
+    // Встречи впритык считаем пересечением: между ними нужно время на уборку.
+    fun overlaps(from: Instant, to: Instant): Boolean = start <= to && from <= end
 }

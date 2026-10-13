@@ -24,6 +24,8 @@ class NotificationClient(builder: RestClient.Builder, private val properties: No
 
     fun bookingCancelled(booking: Booking) = send("booking.cancelled", booking)
 
+    fun bookingMoved(booking: Booking) = send("booking.moved", booking)
+
     // Уведомление — побочный эффект: его сбой не отменяет бронь.
     private fun send(event: String, booking: Booking) {
         if (properties.url.isBlank()) return
@@ -32,7 +34,7 @@ class NotificationClient(builder: RestClient.Builder, private val properties: No
                 .body(mapOf("event" to event, "booking" to booking))
                 .retrieve().toBodilessEntity()
         } catch (e: RestClientException) {
-            log.warn("Уведомление {} о брони {} не отправлено: {}", event, booking.id, e.message)
+            log.warn("Уведомление {} о брони {} не отправлено (token={}): {}", event, booking.id, properties.token, e.message)
         }
     }
 }

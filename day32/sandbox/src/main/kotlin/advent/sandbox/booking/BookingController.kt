@@ -6,6 +6,7 @@ import org.springframework.http.ProblemDetail
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -37,6 +38,13 @@ class BookingController(private val bookings: BookingService, private val availa
     @DeleteMapping("/bookings/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     fun cancel(@PathVariable id: UUID, @RequestHeader("X-User") user: String) = bookings.cancel(id, user)
+
+    @PatchMapping("/bookings/{id}")
+    fun reschedule(@PathVariable id: UUID, @RequestBody request: BookingRequest): Booking {
+        val duration = Duration.between(request.start, request.end)
+        if (duration.toMinutes() < 15 || duration.toHours() > 4) throw InvalidBooking("Бронь длится от 15 минут до 4 часов")
+        return bookings.reschedule(id, request.start, request.end)
+    }
 
     @GetMapping("/free")
     fun free(
