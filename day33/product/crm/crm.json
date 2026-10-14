@@ -1,0 +1,302 @@
+{
+  "exportedAt": "2026-10-14T09:00:00Z",
+  "workspaces": [
+    {
+      "id": "ws-veter",
+      "name": "Северный ветер",
+      "plan": "Team",
+      "owner": "Павел Громов",
+      "admins": ["Павел Громов"],
+      "emailDomain": "veter.example",
+      "ssoOnly": false,
+      "ssoOnlySince": null
+    },
+    {
+      "id": "ws-arktika",
+      "name": "Арктика Логистик",
+      "plan": "Business",
+      "owner": "Сергей Власов",
+      "admins": ["Ирина Ковалёва"],
+      "emailDomain": "arktika-log.example",
+      "ssoOnly": true,
+      "ssoOnlySince": "2026-10-10T07:00:00Z"
+    },
+    {
+      "id": "ws-pixel",
+      "name": "Пиксель",
+      "plan": "Team",
+      "owner": "Вера Ким",
+      "admins": ["Вера Ким"],
+      "emailDomain": "pixel-studio.example",
+      "ssoOnly": false,
+      "ssoOnlySince": null
+    },
+    {
+      "id": "ws-rassvet",
+      "name": "Рассвет",
+      "plan": "Team",
+      "owner": "Олег Рябов",
+      "admins": ["Олег Рябов"],
+      "emailDomain": "rassvet-agro.example",
+      "ssoOnly": false,
+      "ssoOnlySince": null
+    },
+    {
+      "id": "ws-dina",
+      "name": "Личное пространство",
+      "plan": "Free",
+      "owner": "Дина Мельникова",
+      "admins": ["Дина Мельникова"],
+      "emailDomain": null,
+      "ssoOnly": false,
+      "ssoOnlySince": null
+    }
+  ],
+  "customers": [
+    {
+      "id": "c-101",
+      "name": "Анна Соколова",
+      "email": "anna.sokolova@veter.example",
+      "workspaceId": "ws-veter",
+      "role": "member",
+      "timezone": "Europe/Moscow",
+      "status": "locked",
+      "lockedUntil": "2026-10-14T09:28:00Z",
+      "emailConfirmed": true,
+      "twoFactor": "off",
+      "signInMethods": ["password"],
+      "devices": [
+        {"platform": "web", "client": "Chrome 129, Windows", "lastSeenAt": "2026-10-10T15:20:00Z"},
+        {"platform": "web", "client": "Safari 18, iPhone", "lastSeenAt": "2026-10-11T16:06:00Z"}
+      ],
+      "createdAt": "2025-03-17T08:00:00Z"
+    },
+    {
+      "id": "c-102",
+      "name": "Борис Лебедев",
+      "email": "boris.lebedev@arktika-log.example",
+      "workspaceId": "ws-arktika",
+      "role": "member",
+      "timezone": "Europe/Moscow",
+      "status": "active",
+      "lockedUntil": null,
+      "emailConfirmed": true,
+      "twoFactor": "off",
+      "signInMethods": ["password", "google"],
+      "devices": [
+        {"platform": "web", "client": "Edge 129, Windows", "lastSeenAt": "2026-10-09T14:40:00Z"}
+      ],
+      "createdAt": "2024-11-02T07:30:00Z"
+    },
+    {
+      "id": "c-103",
+      "name": "Вера Ким",
+      "email": "vera.kim@pixel-studio.example",
+      "workspaceId": "ws-pixel",
+      "role": "owner",
+      "timezone": "Europe/Moscow",
+      "status": "active",
+      "lockedUntil": null,
+      "emailConfirmed": true,
+      "twoFactor": "totp",
+      "signInMethods": ["password"],
+      "devices": [
+        {"platform": "ios", "client": "Ладья для iOS 2.3.0, iPhone 15", "lastSeenAt": "2026-10-14T08:31:00Z"},
+        {"platform": "web", "client": "Safari 18, macOS", "lastSeenAt": "2026-10-07T12:10:00Z"}
+      ],
+      "createdAt": "2025-06-01T10:00:00Z"
+    },
+    {
+      "id": "c-104",
+      "name": "Григорий Орлов",
+      "email": "g.orlov@rassvet-agro.example",
+      "workspaceId": "ws-rassvet",
+      "role": "member",
+      "timezone": "Europe/Moscow",
+      "status": "active",
+      "lockedUntil": null,
+      "emailConfirmed": true,
+      "twoFactor": "off",
+      "signInMethods": ["password"],
+      "devices": [
+        {"platform": "web", "client": "Chrome 129, macOS", "lastSeenAt": "2026-10-14T08:25:00Z"}
+      ],
+      "createdAt": "2025-09-12T06:00:00Z"
+    },
+    {
+      "id": "c-105",
+      "name": "Дина Мельникова",
+      "email": "dina.melnikova@mail.example",
+      "workspaceId": "ws-dina",
+      "role": "owner",
+      "timezone": "Europe/Moscow",
+      "status": "active",
+      "lockedUntil": null,
+      "emailConfirmed": true,
+      "twoFactor": "totp",
+      "signInMethods": ["password"],
+      "devices": [
+        {"platform": "web", "client": "Chrome 129, macOS", "lastSeenAt": "2026-10-14T08:10:00Z"},
+        {"platform": "android", "client": "Ладья для Android 2.2.4, Pixel 8", "lastSeenAt": "2026-10-13T19:40:00Z"}
+      ],
+      "createdAt": "2026-09-20T17:00:00Z"
+    }
+  ],
+  "subscriptions": [
+    {
+      "workspaceId": "ws-veter",
+      "plan": "Team",
+      "seats": 12,
+      "billing": "yearly",
+      "status": "active",
+      "paidUntil": "2027-02-01T00:00:00Z",
+      "readOnlySince": null,
+      "card": "Mastercard •• 2210",
+      "payments": [
+        {"at": "2026-02-01T09:00:00Z", "amountRub": 46800, "result": "paid", "reason": null}
+      ]
+    },
+    {
+      "workspaceId": "ws-arktika",
+      "plan": "Business",
+      "seats": 140,
+      "billing": "invoice",
+      "status": "active",
+      "paidUntil": "2026-12-31T21:00:00Z",
+      "readOnlySince": null,
+      "card": null,
+      "payments": [
+        {"at": "2026-10-01T10:00:00Z", "amountRub": 289800, "result": "paid", "reason": null}
+      ]
+    },
+    {
+      "workspaceId": "ws-pixel",
+      "plan": "Team",
+      "seats": 6,
+      "billing": "monthly",
+      "status": "active",
+      "paidUntil": "2026-11-01T00:00:00Z",
+      "readOnlySince": null,
+      "card": "Visa •• 9034",
+      "payments": [
+        {"at": "2026-10-01T00:05:00Z", "amountRub": 2340, "result": "paid", "reason": null}
+      ]
+    },
+    {
+      "workspaceId": "ws-rassvet",
+      "plan": "Team",
+      "seats": 8,
+      "billing": "monthly",
+      "status": "read_only",
+      "paidUntil": "2026-10-05T21:00:00Z",
+      "readOnlySince": "2026-10-12T21:00:00Z",
+      "card": "Visa •• 4417",
+      "payments": [
+        {"at": "2026-09-05T21:05:00Z", "amountRub": 3120, "result": "paid", "reason": null},
+        {"at": "2026-10-05T21:05:00Z", "amountRub": 3120, "result": "declined", "reason": "Банк отклонил платёж: истёк срок действия карты"},
+        {"at": "2026-10-07T21:05:00Z", "amountRub": 3120, "result": "declined", "reason": "Банк отклонил платёж: истёк срок действия карты"},
+        {"at": "2026-10-09T21:05:00Z", "amountRub": 3120, "result": "declined", "reason": "Банк отклонил платёж: истёк срок действия карты"},
+        {"at": "2026-10-11T21:05:00Z", "amountRub": 3120, "result": "declined", "reason": "Банк отклонил платёж: истёк срок действия карты"}
+      ]
+    },
+    {
+      "workspaceId": "ws-dina",
+      "plan": "Free",
+      "seats": 3,
+      "billing": "free",
+      "status": "active",
+      "paidUntil": null,
+      "readOnlySince": null,
+      "card": null,
+      "payments": []
+    }
+  ],
+  "loginEvents": [
+    {"customerId": "c-101", "at": "2026-10-10T15:20:00Z", "client": "Chrome 129, Windows", "method": "password", "result": "success", "detail": null},
+    {"customerId": "c-101", "at": "2026-10-11T16:04:00Z", "client": "Safari 18, iPhone", "method": "password_reset", "result": "success", "detail": "Пароль изменён по ссылке из письма"},
+    {"customerId": "c-101", "at": "2026-10-11T16:06:00Z", "client": "Safari 18, iPhone", "method": "password", "result": "success", "detail": null},
+    {"customerId": "c-101", "at": "2026-10-14T08:46:00Z", "client": "Chrome 129, Windows", "method": "password", "result": "wrong_password", "detail": null},
+    {"customerId": "c-101", "at": "2026-10-14T08:49:00Z", "client": "Chrome 129, Windows", "method": "password", "result": "wrong_password", "detail": null},
+    {"customerId": "c-101", "at": "2026-10-14T08:52:00Z", "client": "Chrome 129, Windows", "method": "password", "result": "wrong_password", "detail": null},
+    {"customerId": "c-101", "at": "2026-10-14T08:55:00Z", "client": "Chrome 129, Windows", "method": "password", "result": "wrong_password", "detail": null},
+    {"customerId": "c-101", "at": "2026-10-14T08:58:00Z", "client": "Chrome 129, Windows", "method": "password", "result": "wrong_password", "detail": "5-я неудачная попытка подряд: вход заблокирован на 30 минут"},
+    {"customerId": "c-101", "at": "2026-10-14T08:59:00Z", "client": "Chrome 129, Windows", "method": "password", "result": "locked", "detail": "Попытка во время блокировки отклонена"},
+
+    {"customerId": "c-102", "at": "2026-10-09T06:15:00Z", "client": "Edge 129, Windows", "method": "password", "result": "success", "detail": null},
+    {"customerId": "c-102", "at": "2026-10-12T06:30:00Z", "client": "Edge 129, Windows", "method": "password", "result": "sso_required", "detail": "Для домена arktika-log.example включён режим «Только SSO»"},
+    {"customerId": "c-102", "at": "2026-10-14T08:40:00Z", "client": "Edge 129, Windows", "method": "password", "result": "sso_required", "detail": "Для домена arktika-log.example включён режим «Только SSO»"},
+    {"customerId": "c-102", "at": "2026-10-14T08:41:00Z", "client": "Edge 129, Windows", "method": "password", "result": "sso_required", "detail": "Для домена arktika-log.example включён режим «Только SSO»"},
+    {"customerId": "c-102", "at": "2026-10-14T08:43:00Z", "client": "Edge 129, Windows", "method": "google", "result": "sso_required", "detail": "Для домена arktika-log.example включён режим «Только SSO»"},
+
+    {"customerId": "c-103", "at": "2026-10-07T12:10:00Z", "client": "Safari 18, macOS", "method": "password+totp", "result": "success", "detail": null},
+    {"customerId": "c-103", "at": "2026-10-14T08:20:00Z", "client": "Ладья для iOS 2.3.0", "method": "password+totp", "result": "session_not_created", "detail": "Пароль и код 2FA приняты, приложение не открыло сессию и вернулось на экран входа"},
+    {"customerId": "c-103", "at": "2026-10-14T08:24:00Z", "client": "Ладья для iOS 2.3.0", "method": "password+totp", "result": "session_not_created", "detail": "Пароль и код 2FA приняты, приложение не открыло сессию и вернулось на экран входа"},
+    {"customerId": "c-103", "at": "2026-10-14T08:31:00Z", "client": "Ладья для iOS 2.3.0", "method": "password+totp", "result": "session_not_created", "detail": "Пароль и код 2FA приняты, приложение не открыло сессию и вернулось на экран входа"},
+
+    {"customerId": "c-104", "at": "2026-10-13T06:50:00Z", "client": "Chrome 129, macOS", "method": "password", "result": "success", "detail": null},
+    {"customerId": "c-104", "at": "2026-10-14T08:25:00Z", "client": "Chrome 129, macOS", "method": "password", "result": "success", "detail": null},
+
+    {"customerId": "c-105", "at": "2026-10-12T18:05:00Z", "client": "Ладья для Android 2.2.4", "method": "password+totp", "result": "success", "detail": null},
+    {"customerId": "c-105", "at": "2026-10-13T19:40:00Z", "client": "Ладья для Android 2.2.4", "method": "password+totp", "result": "success", "detail": null},
+    {"customerId": "c-105", "at": "2026-10-14T08:10:00Z", "client": "Chrome 129, macOS", "method": "password+totp", "result": "success", "detail": null}
+  ],
+  "tickets": [
+    {
+      "id": 1031,
+      "customerId": "c-105",
+      "subject": "Как перенести задачи из Excel?",
+      "status": "closed",
+      "channel": "chat",
+      "createdAt": "2026-09-28T10:00:00Z",
+      "messages": [
+        {"from": "customer", "at": "2026-09-28T10:00:00Z", "text": "Подскажите, можно ли загрузить задачи из таблицы Excel?"},
+        {"from": "support", "at": "2026-09-28T11:15:00Z", "text": "Да, через «Проект → ⋯ → Импорт задач». Поддерживаются CSV в UTF-8 и .xlsx до 5000 строк за раз."}
+      ]
+    },
+    {
+      "id": 1038,
+      "customerId": "c-103",
+      "subject": "Не приходят уведомления о комментариях",
+      "status": "closed",
+      "channel": "chat",
+      "createdAt": "2026-09-30T13:20:00Z",
+      "messages": [
+        {"from": "customer", "at": "2026-09-30T13:20:00Z", "text": "На айфоне перестали приходить уведомления о новых комментариях."},
+        {"from": "support", "at": "2026-09-30T15:02:00Z", "text": "Уведомления были выключены в настройках iOS для приложения. После включения всё заработало, закрываем обращение."}
+      ]
+    },
+    {
+      "id": 1042,
+      "customerId": "c-101",
+      "subject": "Не могу войти в аккаунт",
+      "status": "open",
+      "channel": "login_form",
+      "createdAt": "2026-10-14T08:59:00Z",
+      "messages": [
+        {"from": "customer", "at": "2026-10-14T08:59:00Z", "text": "Здравствуйте! С утра не могу войти в «Ладью» с рабочего компьютера: пишет «Неверный пароль», хотя пароль я вроде не меняла. Теперь вообще пишет, что вход временно недоступен."}
+      ]
+    },
+    {
+      "id": 1043,
+      "customerId": "c-102",
+      "subject": "Не пускает по паролю",
+      "status": "open",
+      "channel": "login_form",
+      "createdAt": "2026-10-14T08:45:00Z",
+      "messages": [
+        {"from": "customer", "at": "2026-10-14T08:45:00Z", "text": "С понедельника не могу войти: ввожу пароль, а меня не пускает. Через Google тоже не получается. Пароль точно правильный, раньше всё работало."}
+      ]
+    },
+    {
+      "id": 1044,
+      "customerId": "c-104",
+      "subject": "Не получается создать задачу",
+      "status": "open",
+      "channel": "chat",
+      "createdAt": "2026-10-14T08:30:00Z",
+      "messages": [
+        {"from": "customer", "at": "2026-10-14T08:30:00Z", "text": "Кнопка «Новая задача» серая, а все задачи открываются только на просмотр. На прошлой неделе всё работало."}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Поддержка «Ладьи» · День 33</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/system.css"><link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">♜</span><span>Ладья · Поддержка <small>AI ADVENT · 33</small></span></div>
+    <div class="top-right">
+      <span class="pill"><span class="badge-dot" :data-tone="status.llmConfigured ? 'success' : 'danger'"></span>{{status.model || 'DeepSeek'}}</span>
+      <button class="btn btn-tertiary btn-sm" @click="reset" :disabled="busy || !turns.length"><icon name="rotate"></icon>Новый диалог</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="sidebar">
+      <div class="t-label-sm eyebrow">Демо-вход</div>
+      <p class="side-note">Выберите, от чьего имени писать. В настоящем сервисе клиента определяет сессия.</p>
+      <div class="customers" role="radiogroup" aria-label="Клиент">
+        <button v-for="(c, i) in customers" :key="c.id" class="customer" :class="{selected: c.id === customerId}" role="radio"
+                :aria-checked="c.id === customerId" @click="selectCustomer(c.id)" :disabled="busy">
+          <span class="avatar" :data-tone="tones[i % tones.length]">{{initials(c.name)}}</span>
+          <span class="customer-text"><strong>{{c.name}}</strong><small>{{c.workspace}} · {{c.plan}}</small></span>
+        </button>
+      </div>
+      <div v-if="customersError" class="warning">{{customersError}}</div>
+
+      <div class="t-label-sm eyebrow tickets-title">Ваши обращения</div>
+      <div v-if="!tickets.length" class="side-note">Обращений нет</div>
+      <button v-for="t in tickets" :key="t.id" class="ticket" :class="{attached: attached?.id === t.id}" @click="toggleTicket(t)" :disabled="busy"
+              :title="attached?.id === t.id ? 'Открепить от вопроса' : 'Спросить про это обращение'">
+        <span class="ticket-id">#{{t.id}}</span><span class="ticket-subject">{{t.subject}}</span>
+        <span class="chip" :data-tone="t.status === 'open' ? 'info' : 'neutral'">{{t.status === 'open' ? 'открыто' : 'закрыто'}}</span>
+      </button>
+
+      <div class="connections">
+        <div class="t-label-sm eyebrow">Подключено</div>
+        <div class="connection"><icon name="book"></icon>RAG<span>{{status.index?.documents || '—'}} док. · {{status.index?.chunks || '—'}} фрагм.</span></div>
+        <div class="connection"><icon name="database"></icon>MCP<span>CRM · клиенты, тикеты</span></div>
+        <div class="connection"><icon name="bot"></icon>LLM<span>{{status.model || '—'}}</span></div>
+        <div v-if="status.indexError" class="warning">{{status.indexError}}</div>
+        <div v-if="status.llmConfigured === false" class="warning">Задайте DEEPSEEK_API_KEY в .env</div>
+      </div>
+    </aside>
+
+    <main class="chat">
+      <div class="chat-heading">
+        <div><div class="t-label-sm eyebrow">Чат поддержки</div><h1>Здравствуйте{{customer ? ', ' + firstName(customer.name) : ''}}!</h1></div>
+        <span v-if="customer" class="chip" data-tone="neutral">{{customer.workspace}} · {{customer.plan}}</span>
+      </div>
+
+      <section v-if="!turns.length" class="welcome">
+        <div class="welcome-icon"><icon name="chat"></icon></div>
+        <h2>Чем помочь?</h2>
+        <p>Спросите о «Ладье» или опишите проблему — ассистент проверит<br>ваши данные в CRM и найдёт ответ в документации.</p>
+        <div class="suggestions">
+          <button v-for="s in suggestions" :key="s.text" class="suggestion" @click="ask(s.text)" :disabled="busy || !customerId">
+            <span class="suggestion-icon"><icon :name="s.icon"></icon></span><span>{{s.text}}</span>
+          </button>
+        </div>
+      </section>
+
+      <section v-else class="feed" ref="feed" aria-live="polite">
+        <article v-for="(turn, index) in turns" :key="turn.key" class="turn" :class="{active: selected === index}" @click="selected = index">
+          <div class="user-message">
+            <div class="message-label">ВЫ<span v-if="turn.ticketId" class="chip" data-tone="info"><icon name="ticket"></icon>#{{turn.ticketId}}</span></div>
+            <div>{{turn.message}}</div>
+          </div>
+          <div class="assistant-message">
+            <div class="message-label"><span class="assistant-mark">♜</span>АССИСТЕНТ ЛАДЬИ
+              <span v-if="turn.answer" class="chip" :data-tone="turn.answer.status === 'answered' ? 'success' : 'danger'">{{turn.answer.status === 'answered' ? 'ответ' : 'ошибка'}}</span>
+            </div>
+            <div v-if="!turn.answer && !turn.streaming && !turn.error" class="working"><span class="spinner"></span>{{turn.steps.at(-1)?.title ? stepLabel(turn.steps.at(-1)) : 'Загружаем ваши данные из CRM…'}}</div>
+            <div v-if="!turn.answer && turn.streaming" class="answer-text">{{turn.streaming}}<span class="caret"></span></div>
+            <div v-if="turn.error" class="warning">{{turn.error}}</div>
+            <template v-if="turn.answer">
+              <div class="answer-text"><template v-for="(part, pi) in segments(turn.answer.text, turn.answer)" :key="pi"><button v-if="part.number" class="citation" :class="{invalid: !part.valid}" @click.stop="openSource(index, part.number)">[{{part.number}}]</button><span v-else>{{part.text}}</span></template></div>
+              <div v-for="w in turn.answer.warnings" :key="w" class="warning">{{w}}</div>
+              <div v-if="turn.answer.action" class="action-card" @click.stop>
+                <div class="action-head"><icon name="ticket"></icon>{{turn.answer.action.title}}</div>
+                <div class="action-subject">{{turn.answer.action.fields.subject}}</div>
+                <div class="action-message">{{turn.answer.action.fields.message}}</div>
+                <div v-if="!turn.actionState" class="action-buttons">
+                  <button class="btn btn-primary btn-sm" @click="confirmAction(turn)" :disabled="turn.actionBusy"><icon name="check"></icon>Создать обращение</button>
+                  <button class="btn btn-secondary btn-sm" @click="cancelAction(turn)" :disabled="turn.actionBusy">Не нужно</button>
+                </div>
+                <div v-else class="action-result" :class="turn.actionState.kind">{{turn.actionState.text}}</div>
+                <div class="action-note">Запись в CRM выполняется только по вашей кнопке.</div>
+              </div>
+              <div class="answer-meta">{{sec(turn.answer.durationMs)}} · {{turn.answer.llmCalls}} {{plural(turn.answer.llmCalls, 'вызов', 'вызова', 'вызовов')}} LLM · {{turn.answer.toolCalls}} {{plural(turn.answer.toolCalls, 'инструмент', 'инструмента', 'инструментов')}} · ≈ ${{turn.answer.costUsd.toFixed(4)}}</div>
+            </template>
+          </div>
+        </article>
+      </section>
+
+      <div class="composer-wrap">
+        <div v-if="attached" class="attached"><icon name="ticket"></icon>Про обращение #{{attached.id}} · {{attached.subject}}<button class="attached-remove" @click="attached = null" aria-label="Открепить обращение"><icon name="x"></icon></button></div>
+        <form class="composer" @submit.prevent="ask()">
+          <textarea v-model="input" ref="editor" rows="2" maxlength="4000" aria-label="Сообщение в поддержку" placeholder="Опишите вопрос или проблему…" :disabled="busy || !customerId" @keydown.enter.exact.prevent="ask()"></textarea>
+          <button class="send" type="submit" :disabled="busy || !input.trim() || !customerId" :aria-label="busy ? 'Ассистент отвечает' : 'Отправить'"><span v-if="busy" class="spinner"></span><icon v-else name="send"></icon></button>
+        </form>
+        <div class="composer-note">Enter — отправить · Shift + Enter — новая строка<span>История хранится в этом браузере</span></div>
+      </div>
+    </main>
+
+    <aside class="inspector">
+      <div class="t-label-sm eyebrow">Как работал ассистент</div>
+      <template v-if="current">
+        <p class="inspector-question">«{{current.message}}»</p>
+        <div class="metrics">
+          <div class="metric"><span>Время</span><strong>{{current.answer ? sec(current.answer.durationMs) : '…'}}</strong></div>
+          <div class="metric"><span>LLM</span><strong>{{current.answer ? current.answer.llmCalls : llmSteps(current)}}</strong></div>
+          <div class="metric"><span>Инструменты</span><strong>{{current.answer ? current.answer.toolCalls : toolSteps(current)}}</strong></div>
+          <div class="metric"><span>Стоимость</span><strong>{{current.answer ? '$' + current.answer.costUsd.toFixed(4) : '…'}}</strong></div>
+        </div>
+        <div class="tokens" v-if="current.answer">{{current.answer.promptTokens.toLocaleString('ru-RU')}} → {{current.answer.completionTokens.toLocaleString('ru-RU')}} токенов · {{current.answer.model}}</div>
+        <ol class="steps">
+          <li v-for="(step, si) in current.steps" :key="si" class="step" :data-kind="step.kind" :class="{error: step.status === 'error'}">
+            <span class="step-icon"><icon :name="kindIcon(step)"></icon></span>
+            <details>
+              <summary><span class="step-title">{{stepLabel(step)}}</span><span class="step-time">{{step.durationMs ? sec(step.durationMs) : ''}}</span><span class="step-summary">{{stepSummary(step)}}</span></summary>
+              <pre>{{JSON.stringify(step.detail, null, 2)}}</pre>
+            </details>
+          </li>
+          <li v-if="busy && current === turns.at(-1) && !current.answer" class="step pending"><span class="step-icon"><span class="spinner"></span></span><span class="step-title">выполняется…</span></li>
+        </ol>
+        <template v-if="current.answer?.sources.length">
+          <div class="t-label-sm eyebrow sources-title">Фрагменты документации</div>
+          <details v-for="s in current.answer.sources" :key="s.number" class="source" :open="openedSource === s.number" :class="{cited: current.answer.cited.includes(s.number)}">
+            <summary @click.prevent="openedSource = openedSource === s.number ? null : s.number"><span class="source-number">{{s.number}}</span><span class="source-name">{{s.file}} › {{(s.section || s.title).split(' › ').at(-1)}}</span><span v-if="current.answer.cited.includes(s.number)" class="source-used">в ответе</span></summary>
+            <pre>{{s.text}}</pre>
+          </details>
+        </template>
+      </template>
+      <div v-else class="inspector-empty">
+        <p>Здесь появится пайплайн ответа: какие данные CRM ассистент запросил через MCP, что нашёл в документации и сколько это стоило.</p>
+        <div class="legend">
+          <div><span class="step-icon" data-kind="crm"><icon name="database"></icon></span>CRM через MCP</div>
+          <div><span class="step-icon" data-kind="docs"><icon name="book"></icon></span>Поиск по документации</div>
+          <div><span class="step-icon" data-kind="llm"><icon name="bot"></icon></span>Ход модели</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+  <div v-if="notice" class="toast" role="status">{{notice}}</div>
+</div>
+<script src="/vendor/vue.global.prod.js"></script><script src="/app.js"></script>
+</body>
+</html>

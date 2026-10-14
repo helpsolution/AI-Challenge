@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: day33-support-assistant
+  threads:
+    virtual:
+      enabled: true
+  config:
+    import: optional:file:.env[.properties]
+crm:
+  mcp-url: ${CRM_MCP_URL:http://127.0.0.1:8331/mcp}
+  # Модель вызывает сама: только чтение данных текущего клиента.
+  auto-tools: get_subscription, get_login_events, list_tickets, get_ticket
+  # Запись в CRM: модель только предлагает, выполняет клиент кнопкой.
+  confirm-tools: create_ticket
+agent:
+  max-steps: 6
+  history-turns: 3
+cloud-llm:
+  base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+  api-key: ${DEEPSEEK_API_KEY:}
+  model: ${DEEPSEEK_MODEL:deepseek-flash}
+  temperature: 0.2
+  max-tokens: 900
+  timeout: 120s
+  attempts: 3
+  # Пиковый тариф deepseek-flash, $ за миллион токенов — для оценки стоимости ответа.
+  input-price: 0.30
+  output-price: 1.20
+ollama:
+  base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+  model: ${OLLAMA_EMBED_MODEL:nomic-embed-text}
+  timeout: 90s
+  document-prefix: "search_document: "
+  query-prefix: "search_query: "
+knowledge:
+  docs-dir: product/docs
+  index-file: data/index/knowledge.db
+  target-chars: 1400
+  max-chars: 2200
+  top-k: 4
+server:
+  address: 127.0.0.1
+  port: ${PORT:8330}
