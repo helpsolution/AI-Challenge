@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: day34-project-assistant
+  threads:
+    virtual:
+      enabled: true
+  config:
+    import: optional:file:.env[.properties]
+files:
+  mcp-url: ${FILES_MCP_URL:http://127.0.0.1:8341/mcp}
+agent:
+  max-steps: 16
+cloud-llm:
+  base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+  api-key: ${DEEPSEEK_API_KEY:}
+  model: ${DEEPSEEK_MODEL:deepseek-flash}
+  temperature: 0.2
+  max-tokens: 6000
+  timeout: 120s
+  attempts: 3
+  # Настраиваемая оценка стоимости, $ за миллион токенов.
+  input-price: ${LLM_INPUT_PRICE:0.30}
+  output-price: ${LLM_OUTPUT_PRICE:1.20}
+server:
+  address: 127.0.0.1
+  port: ${PORT:8340}

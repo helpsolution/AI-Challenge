@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: day32-sandbox
+server:
+  address: 127.0.0.1
+  port: ${PORT:8320}
+notify:
+  url: ${NOTIFY_URL:}
+  token: ${NOTIFY_TOKEN:}
