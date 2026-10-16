@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Смотритель — синхронизация документации</title>
+  <link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/css/system.css"><link rel="stylesheet" href="/css/app.css">
+  <script defer src="/vendor/vue.global.prod.js"></script><script defer src="/app.js"></script>
+</head>
+<body>
+<div id="app" v-cloak>
+  <header class="topbar"><a class="brand" href="/"><span class="logo">⌘</span> Смотритель <span class="brand-caption">/ документация по коду</span></a><span class="connection" :class="{bad: status && !status.llmConfigured}"><i></i>{{ status?.llmConfigured ? 'DeepSeek настроен' : status ? 'Нужен ключ DeepSeek' : 'Подключение…' }}</span></header>
+  <div class="workspace">
+    <aside class="sidebar">
+      <div class="eyebrow">РАБОЧИЙ ПРОЕКТ</div>
+      <div class="project-card"><span class="project-icon">▦</span><div><strong>{{ project?.name || 'Локальный проект' }}</strong><small>{{ project ? project.files.length + ' файлов для анализа' : 'Загрузка проекта…' }}</small></div></div>
+      <p class="sidebar-note">{{ project?.directory || 'Путь к проекту загружается…' }}</p>
+      <button class="new-task" @click="newTask" :disabled="busy">＋ Новая задача</button>
+      <div class="section-label">ЗАПУСКИ <span>{{ runs.length }}</span></div>
+      <nav class="run-list"><button v-for="r in runs" :key="r.key" class="run-link" :class="{selected: active === r.key}" @click="selectRun(r)"><span :class="['run-dot', r.answer?.status || 'running']"></span><span>{{ r.message }}</span></button><p v-if="!runs.length" class="muted small">Здесь появится история задач этой сессии.</p></nav>
+      <div class="sidebar-bottom"><div class="eyebrow">ПОДКЛЮЧЕНИЯ</div><p><span class="service-icon">◇</span> {{ status?.model || 'DeepSeek' }}</p><p><span class="service-icon">⌁</span> Файловый MCP</p><small>День 35 · AI Advent Challenge</small></div>
+    </aside>
+
+    <main class="main">
+      <template v-if="!current">
+        <div class="intro"><span class="intro-tag">КОД → ДОКУМЕНТАЦИЯ → ПРОВЕРКА</span><h1>Проект меняется.<br><span>Документация успевает.</span></h1><p>Сверьте документацию с актуальным кодом.<br class="desktop"> Получите исправленные документы, отчёт и diff.</p></div>
+        <div class="scenario-grid"><button class="scenario" @click="choose('docs')"><span class="scenario-icon">↗</span><span class="eyebrow">СЦЕНАРИЙ 01</span><h2>Сверить документацию</h2><p>Проверить запуск, настройки, API и архитектуру. Исправить подтверждённые расхождения.</p><span class="scenario-action">Подготовить задачу <b>→</b></span></button><button class="scenario" @click="choose('api')"><span class="scenario-icon green">✓</span><span class="eyebrow">СЦЕНАРИЙ 02</span><h2>Проверить API</h2><p>Сопоставить методы, запросы, ответы и ошибки с реализацией.</p><span class="scenario-action">Подготовить задачу <b>→</b></span></button></div>
+        <div class="how"><span>01 Снимок проекта</span><b>→</b><span>02 Сверка с кодом</span><b>→</b><span>03 Документы + отчёт + diff</span></div>
+      </template>
+
+      <section v-else class="run-view">
+        <div class="task-heading"><div class="eyebrow">ЗАДАЧА {{ runs.indexOf(current) + 1 }}</div><h1>{{ current.message }}</h1><span :class="['status-label', current.answer?.status || 'running']">{{ statusLabel(current) }}</span></div>
+        <div class="tabs" role="tablist" aria-label="Результаты задачи"><button v-for="t in tabs" :key="t.id" role="tab" :aria-selected="tab === t.id" :class="{active: tab === t.id}" @click="tab = t.id">{{ t.label }} <span v-if="t.id === 'diff' && changes.length">{{ changes.length }}</span></button><a v-if="changes.length" class="download" :href="'/api/runs/' + current.answer.workspaceId + '/diff'" download="project.patch">↓ Скачать diff</a></div>
+        <div class="tab-content">
+          <template v-if="tab === 'result'">
+            <div v-if="current.answer || current.draft" class="answer-text">{{ current.answer?.text || current.draft }}</div>
+            <div v-else-if="busy" class="working"><span class="spinner"></span> Ассистент изучает проект…<small>Шаги работы появляются справа.</small></div>
+            <div v-if="current.answer?.warnings?.length" class="warning" v-for="w in current.answer.warnings">{{ w }}</div>
+            <div v-if="current.answer?.result?.patchApplicable" class="patch-note">✓ Diff прошёл проверку применения к исходному снимку.</div><div v-if="current.answer?.result?.sourceChangedPaths?.length" class="warning">После создания снимка изменились: {{ current.answer.result.sourceChangedPaths.join(', ') }}</div><div v-if="changes.length" class="result-files"><div class="eyebrow">СОХРАНЁННЫЕ ФАЙЛЫ</div><button v-for="f in changes" @click="selectedFile = f.path; tab = 'files'"><span>▤</span><strong>{{ f.path }}</strong><small>{{ f.kind === 'created' ? 'Создан' : 'Обновлён' }}</small><b>↗</b></button></div>
+            <div v-if="current.answer" class="metrics"><div><b>{{ seconds(current.answer.durationMs) }}</b><span>время</span></div><div><b>{{ current.answer.result?.readFiles?.length || 0 }}</b><span>файлов прочитано</span></div><div><b>{{ current.answer.toolCalls }}</b><span>вызовов инструментов</span></div><div><b>${{ current.answer.costUsd.toFixed(4) }}</b><span>оценка стоимости</span></div></div>
+          </template>
+          <template v-else-if="tab === 'diff'"><div v-if="!changes.length" class="empty-panel">Diff появится после сохранения изменений.</div><div v-for="f in changes" class="diff-file"><div class="file-bar"><strong>{{ f.path }}</strong><span>{{ f.kind === 'created' ? 'Новый файл' : 'Изменён' }}</span></div><pre class="diff"><span v-for="(line, i) in f.diff.split('\n')" :key="i" :class="diffClass(line)">{{ line || ' ' }}</span></pre></div></template>
+          <template v-else><div v-if="!changes.length" class="empty-panel">Здесь будут сохранённые документы и отчёты.</div><template v-else><div class="file-selector"><button v-for="f in changes" :class="{active: shownFile?.path === f.path}" @click="selectedFile = f.path">{{ f.path }}</button></div><div v-if="shownFile" class="document-view"><div class="file-bar"><strong>{{ shownFile.path }}</strong><button @click="downloadFile(shownFile)">↓ Скачать</button></div><pre>{{ shownFile.content }}</pre></div></template></template>
+          <details v-if="current.answer?.result?.directory" class="save-location"><summary>Где сохранены файлы</summary><code>{{ current.answer.result.directory }}</code><p>Это отдельная копия проекта. Новый запуск создаст снимок актуального состояния исходного проекта. Скачанный diff применяется вручную после просмотра.</p></details>
+        </div>
+      </section>
+
+      <form class="composer" @submit.prevent="submit"><label class="sr-only" for="goal">Цель задачи</label><textarea id="goal" ref="prompt" v-model="message" rows="3" placeholder="Например: проверь документацию API и обнови её по коду…" :disabled="busy" @keydown="onKey"></textarea><div class="composer-footer"><span>{{ busy ? 'Работа с файлами…' : 'Самостоятельный поиск · отдельная рабочая копия' }}</span><button class="primary" type="submit" :disabled="busy || !message.trim()"><span v-if="busy" class="spinner"></span>{{ busy ? 'Выполняется' : 'Выполнить задачу' }} <span v-if="!busy">↑</span></button></div></form>
+      <p v-if="error" class="error-banner" role="alert">{{ error }}</p>
+    </main>
+
+    <aside class="inspector"><div class="inspector-head"><h2>Ход работы</h2><span>{{ current?.steps.length || 0 }} шагов</span></div><template v-if="current"><div v-if="current.workspace" class="workspace-tag">◇ Рабочая копия {{ current.workspace.workspaceId.slice(0,8) }}</div><div class="steps"><div v-for="(s, i) in current.steps" :key="i" :class="['step', s.status]"><span :class="['step-icon', s.kind]">{{ s.kind === 'write' ? '↥' : s.kind === 'check' ? '✓' : s.kind === 'llm' ? '✦' : s.kind === 'note' ? '·' : '⌁' }}</span><details><summary><strong>{{ s.title }}</strong><small>{{ seconds(s.durationMs) }}</small><p v-if="stepSummary(s)">{{ stepSummary(s) }}</p></summary><pre>{{ pretty(s.detail) }}</pre></details></div><div v-if="busy" class="step"><span class="step-icon"><span class="spinner"></span></span><span class="muted small">Следующий шаг…</span></div></div><details v-if="current.answer?.result?.readFiles?.length" class="read-files"><summary>Прочитанные файлы · {{ current.answer.result.readFiles.length }}</summary><p v-for="f in current.answer.result.readFiles">{{ f }}</p></details></template><div v-else class="inspector-empty"><div class="empty-symbol">⌁</div><h3>Все действия видны</h3><p>Поиск, чтение, запись и проверка изменений — с аргументами и результатами каждого вызова.</p><div class="legend"><span><i class="files"></i> Чтение и поиск</span><span><i class="llm"></i> Решение модели</span><span><i class="write"></i> Сохранение файла</span><span><i class="check"></i> Проверка результата</span></div></div></aside>
+  </div>
+</div>
+</body></html>
