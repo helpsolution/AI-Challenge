@@ -1,6 +1,6 @@
 # День 35 Hard — редактор постов для Telegram-канала
 
-Сервис, которым автор пользуется сам: открывает страницу, выбирает профиль и за несколько реплик получает готовый пост для своего Telegram-канала. Работает на VPS по адресу `https://posts.<IP через дефисы>.sslip.io`: для VPS 203.0.113.10 это `https://posts.203-0-113-10.sslip.io`.
+Сервис, которым автор пользуется сам: открывает страницу, выбирает профиль и за несколько реплик получает готовый пост для своего Telegram-канала. Работает на VPS: **https://posts.91-188-212-44.sslip.io** — можно открыть и попробовать, вход не нужен.
 
 ## Какую задачу решает
 
@@ -52,7 +52,7 @@ cp .env.example .env    # указать DEEPSEEK_API_KEY
 ## Выкладка на VPS
 
 ```bash
-deploy/deploy.sh user@203.0.113.10
+deploy/deploy.sh user@91.188.212.44
 ```
 
 Скрипт собирает jar и копирует его в `/opt/post-editor`. Затем он записывает ключ DeepSeek из локального `.env` в `/etc/post-editor.env` (права 600, ключ передаётся через stdin) и запускает systemd-сервис `post-editor`. Сайт подключается к Caddy отдельным файлом `/etc/caddy/sites/post-editor.caddy`. Caddy сам получает сертификат Let's Encrypt.
@@ -69,9 +69,9 @@ deploy/deploy.sh user@203.0.113.10
 Эксплуатация:
 
 ```bash
-ssh user@203.0.113.10 sudo journalctl -u post-editor -f           # журнал
-ssh user@203.0.113.10 sudo systemctl restart post-editor          # перезапуск
-scp user@203.0.113.10:/var/lib/post-editor/posts.db ./backup.db   # копия базы
+ssh user@91.188.212.44 sudo journalctl -u post-editor -f           # журнал
+ssh user@91.188.212.44 sudo systemctl restart post-editor          # перезапуск
+scp user@91.188.212.44:/var/lib/post-editor/posts.db ./backup.db   # копия базы
 ```
 
 ## Ограничения
