@@ -1,0 +1,25 @@
+[Unit]
+Description=Post editor for a Telegram channel (DeepSeek)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=posts
+Group=posts
+# Ключ DeepSeek и модель. Файл пишет deploy.sh из локального .env, права 600, в репозиторий не попадает.
+EnvironmentFile=/etc/post-editor.env
+Environment=DB_PATH=/var/lib/post-editor/posts.db
+# /var/lib/post-editor создает systemd и отдает пользователю posts: только сюда сервису можно писать.
+StateDirectory=post-editor
+WorkingDirectory=/var/lib/post-editor
+# На машине 2 ГБ, и большую часть держит Ollama дня 30: небольшая куча и только C1-компилятор.
+ExecStart=/usr/bin/java -Xmx160m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -jar /opt/post-editor/post-editor.jar
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

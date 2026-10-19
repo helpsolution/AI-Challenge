@@ -3,3 +3,6 @@
 __DOMAIN__ {
 	reverse_proxy 127.0.0.1:8310
 }
+
+# Сайты других сервисов на этом же VPS (например, редактор постов из day35 Hard).
+import /etc/caddy/sites/*.caddy
